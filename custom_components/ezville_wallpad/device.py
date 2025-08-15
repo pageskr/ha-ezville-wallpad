@@ -4,7 +4,7 @@ from typing import Any, Dict, Optional
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import DOMAIN, MANUFACTURER, MODEL
+from .const import DOMAIN, MANUFACTURER, MODEL, DOCUMENTATION_URL
 from .coordinator import EzvilleWallpadCoordinator
 
 
@@ -76,7 +76,7 @@ class EzvilleWallpadDevice(CoordinatorEntity):
             model=MODEL,
             hw_version="1.0",
             sw_version="1.0.0",
-            configuration_url="https://pages.kr",
+            configuration_url=DOCUMENTATION_URL,
             suggested_area=self._get_suggested_area(device_type),
             via_device=(DOMAIN, "main"),
         )

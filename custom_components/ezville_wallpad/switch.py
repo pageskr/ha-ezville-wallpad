@@ -83,8 +83,10 @@ class EzvilleSwitch(CoordinatorEntity, SwitchEntity):
         else:
             self._attr_name = device_info.get("name", f"Plug {device_info['device_id']}")
         
-        # Device info from coordinator
-        self._attr_device_info = coordinator.get_device_info(device_key)
+        # Device info - use room-based grouping
+        from .device import EzvilleWallpadDevice
+        base_device = EzvilleWallpadDevice(coordinator, device_key, self._attr_unique_id, self._attr_name)
+        self._attr_device_info = base_device.device_info
         
         _LOGGER.debug("Initialized switch entity: %s", self._attr_name)
 

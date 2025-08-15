@@ -268,6 +268,9 @@ class EzvilleRS485Client:
 
     def _process_buffer(self, buffer: bytearray):
         """Process received data buffer using ezville_wallpad.py logic."""
+        processed_count = 0
+        _LOGGER.debug("=== Processing buffer with %d bytes ===", len(buffer))
+        
         while len(buffer) > 0:
             # Remove any leading bytes before 0xF7
             start_index = -1
@@ -278,6 +281,7 @@ class EzvilleRS485Client:
             
             if start_index == -1:
                 # No F7 found, clear buffer
+                _LOGGER.debug("No F7 found in buffer, clearing %d bytes", len(buffer))
                 buffer.clear()
                 return
             
@@ -288,6 +292,7 @@ class EzvilleRS485Client:
             
             # Need at least 7 bytes for minimum packet
             if len(buffer) < 7:
+                _LOGGER.debug("Buffer too small (%d bytes), waiting for more data", len(buffer))
                 return
             
             # Skip consecutive 0xF7 at start
@@ -302,18 +307,23 @@ class EzvilleRS485Client:
             header_2 = buffer[2]
             header_3 = buffer[3]
             
+            _LOGGER.debug("Packet headers: 0x%02X 0x%02X 0x%02X", header_1, header_2, header_3)
+            
             # Check if this is a state packet
             if header_1 in STATE_HEADER and header_3 == STATE_HEADER[header_1][1]:
                 if len(buffer) < 5:
                     return
                 data_length = buffer[4]
                 packet_length = 5 + data_length + 2  # F7 + 4 headers + data + checksum + add
+                _LOGGER.debug("State packet detected, data length: %d, total packet length: %d", data_length, packet_length)
             else:
                 # Other packet types (default 8 bytes)
                 packet_length = 8
+                _LOGGER.debug("Standard packet, length: %d", packet_length)
             
             # Check if we have complete packet
             if len(buffer) < packet_length:
+                _LOGGER.debug("Incomplete packet, need %d bytes but have %d", packet_length, len(buffer))
                 return
             
             # Extract packet
@@ -326,24 +336,37 @@ class EzvilleRS485Client:
                 continue
             
             # Process packet
-            _LOGGER.info("<== Valid packet received: %s", packet.hex())
+            _LOGGER.info("<== Valid packet received [%d]: %s", processed_count + 1, packet.hex())
             self._process_packet(packet)
+            processed_count += 1
+            
+            # Continue processing if there's more data
+            if len(buffer) > 0:
+                _LOGGER.debug("Buffer has %d more bytes, continuing to process", len(buffer))
 
     def _verify_checksum(self, packet: bytes) -> bool:
         """Verify packet checksum."""
         if len(packet) < 2:
             return False
         
-        # XOR all bytes except last one
+        # Calculate checksum (XOR of all bytes except last two)
         checksum = 0
-        for b in packet[:-1]:
+        for b in packet[:-2]:
             checksum ^= b
         
-        # Calculate ADD
+        # Calculate ADD (sum of all bytes except last one)
         add = sum(packet[:-1]) & 0xFF
         
-        # Check if matches
-        return checksum == 0 and add == packet[-1]
+        # Get expected values from packet
+        expected_checksum = packet[-2]
+        expected_add = packet[-1]
+        
+        # Debug log
+        _LOGGER.debug("Checksum: calc=0x%02X, expected=0x%02X | ADD: calc=0x%02X, expected=0x%02X",
+                     checksum, expected_checksum, add, expected_add)
+        
+        # Both checksum and add must match
+        return checksum == expected_checksum and add == expected_add
 
     def _process_packet(self, packet: bytes):
         """Process a received packet with detailed logging."""
@@ -848,7 +871,7 @@ class EzvilleMqtt:
             # Parse the message payload
             if msg.topic == self.topic_recv:
                 _LOGGER.debug("MQTT MSG on %s: %d bytes", msg.topic, len(msg.payload))
-                _LOGGER.debug("MQTT RAW: %s", msg.payload[:100])  # First 100 bytes
+                _LOGGER.debug("MQTT RAW: %s", msg.payload[:200])  # First 200 bytes
                 
                 # Assume the payload is hex string or bytes
                 if isinstance(msg.payload, bytes):
@@ -856,16 +879,39 @@ class EzvilleMqtt:
                     try:
                         hex_str = msg.payload.decode('utf-8')
                         # Remove any spaces or commas
-                        hex_str = hex_str.replace(' ', '').replace(',', '')
+                        hex_str = hex_str.replace(' ', '').replace(',', '').replace('\n', '').replace('\r', '')
                         data = bytes.fromhex(hex_str)
                         _LOGGER.debug("MQTT Decoded hex string to %d bytes", len(data))
+                        _LOGGER.debug("MQTT Hex data: %s", data.hex())
                     except:
                         # If not hex string, use raw bytes
                         data = msg.payload
                         _LOGGER.debug("MQTT Using raw bytes: %d bytes", len(data))
                     
-                    self._recv_buf.extend(data)
-                    _LOGGER.debug("MQTT Buffer now has %d bytes, added: %s", len(self._recv_buf), data.hex())
+                    # Split data by F7 markers and process each packet separately
+                    if b'\xf7' in data:
+                        packet_count = data.count(b'\xf7')
+                        _LOGGER.debug("MQTT Found %d F7 markers in data", packet_count)
+                        
+                        # Split by F7 and process each packet
+                        temp_buffer = bytearray()
+                        for i, byte in enumerate(data):
+                            if byte == 0xF7 and len(temp_buffer) > 0:
+                                # Process previous packet
+                                self._recv_buf.extend(temp_buffer)
+                                _LOGGER.debug("MQTT Processing packet from split: %s", temp_buffer.hex())
+                                temp_buffer = bytearray([0xF7])
+                            else:
+                                temp_buffer.append(byte)
+                        
+                        # Add remaining data
+                        if temp_buffer:
+                            self._recv_buf.extend(temp_buffer)
+                            _LOGGER.debug("MQTT Processing final packet: %s", temp_buffer.hex())
+                    else:
+                        self._recv_buf.extend(data)
+                    
+                    _LOGGER.debug("MQTT Buffer now has %d bytes", len(self._recv_buf))
         except Exception as err:
             _LOGGER.error("Error processing MQTT message: %s", err)
     

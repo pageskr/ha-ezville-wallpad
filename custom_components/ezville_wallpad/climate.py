@@ -94,8 +94,10 @@ class EzvilleThermostat(CoordinatorEntity, ClimateEntity):
             HVACMode.AUTO,
         ]
         
-        # Device info는 base class에서 처리하도록 함
-        self._attr_device_info = coordinator.get_device_info(device_key)
+        # Device info - use single thermostat grouping
+        from .device import EzvilleWallpadDevice
+        base_device = EzvilleWallpadDevice(coordinator, device_key, self._attr_unique_id, self._attr_name)
+        self._attr_device_info = base_device.device_info
 
     @property
     def current_temperature(self) -> Optional[float]:

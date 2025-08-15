@@ -248,23 +248,32 @@ class EzvilleWallpadCoordinator(DataUpdateCoordinator):
         
         _LOGGER.info("Platforms to load: %s", self._platforms_to_load)
 
-    def _on_device_discovered(self, device_type: str, device_id: int):
+    def _on_device_discovered(self, device_type: str, device_id: Any):
         """Handle new device discovery."""
         if device_type not in self.capabilities:
-            _LOGGER.debug("Ignoring discovered device %s_%d (not in capabilities)", 
+            _LOGGER.debug("Ignoring discovered device %s_%s (not in capabilities)", 
                          device_type, device_id)
             return
         
+        # Convert device_id to string for consistent key format
         device_key = f"{device_type}_{device_id}"
         
         if device_key not in self.devices:
             _LOGGER.info("Discovered new device: %s", device_key)
             
+            # Parse device ID to get display name
+            if isinstance(device_id, str) and "_" in device_id:
+                # For light_1_2 format
+                parts = device_id.split("_")
+                display_name = f"{device_type.title()} {parts[0]} {parts[1]}"
+            else:
+                display_name = f"{device_type.title()} {device_id}"
+            
             # Create device entry
             self.devices[device_key] = {
                 "device_type": device_type,
                 "device_id": device_id,
-                "name": f"{device_type.title()} {device_id}",
+                "name": display_name,
                 "state": {}
             }
             
@@ -395,21 +404,31 @@ class EzvilleWallpadCoordinator(DataUpdateCoordinator):
         await self.hass.async_add_executor_job(self.client.close)
 
     @callback
-    def _device_update_callback(self, device_type: str, device_id: int, state: Dict[str, Any]):
+    def _device_update_callback(self, device_type: str, device_id: Any, state: Dict[str, Any]):
         """Handle device state updates."""
         # Skip if device type not in enabled capabilities
         if device_type not in self.capabilities:
             return
             
+        # Convert device_id to string for consistent key format
         device_key = f"{device_type}_{device_id}"
         
         # Update or create device entry
         if device_key not in self.devices:
             _LOGGER.info("New device detected via state update: %s", device_key)
+            
+            # Parse device ID to get display name
+            if isinstance(device_id, str) and "_" in device_id:
+                # For light_1_2 format
+                parts = device_id.split("_")
+                display_name = f"{device_type.title()} {parts[0]} {parts[1]}"
+            else:
+                display_name = f"{device_type.title()} {device_id}"
+            
             self.devices[device_key] = {
                 "device_type": device_type,
                 "device_id": device_id,
-                "name": f"{device_type.title()} {device_id}",
+                "name": display_name,
                 "state": state
             }
             # Check if platform needs to be loaded
@@ -443,9 +462,9 @@ class EzvilleWallpadCoordinator(DataUpdateCoordinator):
             except ValueError:
                 pass
 
-    async def send_command(self, device_type: str, device_id: int, command: str, payload: Any):
+    async def send_command(self, device_type: str, device_id: Any, command: str, payload: Any):
         """Send a command to a device."""
-        _LOGGER.debug("Sending command %s to %s_%d with payload %s", 
+        _LOGGER.debug("Sending command %s to %s_%s with payload %s", 
                      command, device_type, device_id, payload)
         await self.hass.async_add_executor_job(
             self.client.send_command,
@@ -457,14 +476,10 @@ class EzvilleWallpadCoordinator(DataUpdateCoordinator):
 
     def get_device_info(self, device_key: str) -> dict:
         """Get device info for Home Assistant."""
-        device = self.devices.get(device_key, {})
-        return {
-            "identifiers": {(DOMAIN, device_key)},
-            "name": device.get("name", device_key),
-            "manufacturer": MANUFACTURER,
-            "model": MODEL,
-            "configuration_url": DOCUMENTATION_URL,
-        }
+        # This method is deprecated - use EzvilleWallpadDevice.device_info instead
+        from .device import EzvilleWallpadDevice
+        base_device = EzvilleWallpadDevice(self, device_key, f"{DOMAIN}_{device_key}", "temp")
+        return base_device.device_info
     
     def get_platforms_to_load(self) -> set:
         """Get platforms that need to be loaded."""

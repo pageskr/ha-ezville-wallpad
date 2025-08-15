@@ -137,3 +137,26 @@ ENTITY_NAMES = {
     "gas_close": "Gas Valve Close",
     "fan_mode": "Ventilation Fan Mode",
 }
+
+# Packet examples (for debugging)
+# Light state: f7 0e 11 81 03 01 00 00 e9 00  
+# - 0e: light device ID
+# - 11: room/group (upper 4 bits: group, lower 4 bits: room)
+# - 81: state command
+# - 03: data length (3 lights)
+# - 01 00 00: light states (bit 0 = on/off)
+# 
+# Plug state: f7 39 11 81 06 00 00 00 00 00 00 6d 08
+# - 39: plug device ID
+# - 11: room/group 
+# - 81: state command
+# - 06: data length (2 plugs x 3 bytes each)
+# - bytes 5-7: plug 1 data (power state + usage)
+# - bytes 8-10: plug 2 data
+#
+# Thermostat state: f7 36 01 81 09 00 01 01 18 18 00 00 00 00 ea 02
+# - 36: thermostat device ID
+# - 01: room/group
+# - 81: state command
+# - 09: data length
+# - bytes 5-13: thermostat data (mode, away, temps)
