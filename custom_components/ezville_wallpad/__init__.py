@@ -1,0 +1,319 @@
+"""Ezville Wallpad integration for Home Assistant."""
+import logging
+from datetime import timedelta
+
+from homeassistant.config_entries import ConfigEntry
+from homeassistant.const import Platform
+from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import ConfigEntryNotReady
+
+from .const import (
+    DOMAIN,
+    PLATFORMS,
+    CONF_CONNECTION_TYPE,
+    CONF_SERIAL_PORT,
+    CONF_HOST,
+    CONF_PORT,
+    CONF_MQTT_BROKER,
+    CONF_MQTT_PORT,
+    CONF_MQTT_USERNAME,
+    CONF_MQTT_PASSWORD,
+    CONF_MQTT_TOPIC_RECV,
+    CONF_MQTT_TOPIC_SEND,
+    CONF_MQTT_QOS,
+    CONF_MQTT_STATE_SUFFIX,
+    CONF_MQTT_COMMAND_SUFFIX,
+    CONNECTION_TYPE_SERIAL,
+    CONNECTION_TYPE_SOCKET,
+    CONNECTION_TYPE_MQTT,
+    DEFAULT_SCAN_INTERVAL,
+    DEFAULT_MQTT_QOS,
+    DEFAULT_MQTT_STATE_SUFFIX,
+    DEFAULT_MQTT_COMMAND_SUFFIX,
+)
+from .coordinator import EzvilleWallpadCoordinator
+
+_LOGGER = logging.getLogger(__name__)
+
+
+async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+    """Set up Ezville Wallpad from a config entry."""
+    _LOGGER.info("Setting up Ezville Wallpad integration")
+    _LOGGER.debug("Config data: %s", entry.data)
+    _LOGGER.debug("Config options: %s", entry.options)
+    
+    # Get configuration
+    connection_type = entry.data[CONF_CONNECTION_TYPE]
+    
+    # Get scan interval based on connection type
+    if connection_type == CONNECTION_TYPE_MQTT:
+        # MQTT doesn't need scan interval
+        scan_interval = None
+        _LOGGER.debug("MQTT mode: No scan interval needed")
+    else:
+        scan_interval = entry.options.get("scan_interval", DEFAULT_SCAN_INTERVAL)
+        _LOGGER.debug("Scan interval: %d seconds", scan_interval)
+    
+    # Create coordinator based on connection type
+    if connection_type == CONNECTION_TYPE_SERIAL:
+        serial_port = entry.data[CONF_SERIAL_PORT]
+        _LOGGER.info("Creating coordinator for serial connection: %s", serial_port)
+        coordinator = EzvilleWallpadCoordinator(
+            hass,
+            config_entry=entry,
+            connection_type=connection_type,
+            serial_port=serial_port,
+            update_interval=timedelta(seconds=scan_interval) if scan_interval else None,
+        )
+    elif connection_type == CONNECTION_TYPE_SOCKET:
+        host = entry.data[CONF_HOST]
+        port = entry.data[CONF_PORT]
+        _LOGGER.info("Creating coordinator for socket connection: %s:%s", host, port)
+        coordinator = EzvilleWallpadCoordinator(
+            hass,
+            config_entry=entry,
+            connection_type=connection_type,
+            host=host,
+            port=port,
+            update_interval=timedelta(seconds=scan_interval) if scan_interval else None,
+        )
+    elif connection_type == CONNECTION_TYPE_MQTT:
+        mqtt_broker = entry.data[CONF_MQTT_BROKER]
+        mqtt_port = entry.data[CONF_MQTT_PORT]
+        mqtt_username = entry.data.get(CONF_MQTT_USERNAME)
+        mqtt_password = entry.data.get(CONF_MQTT_PASSWORD)
+        mqtt_topic_recv = entry.data.get(CONF_MQTT_TOPIC_RECV)
+        mqtt_topic_send = entry.data.get(CONF_MQTT_TOPIC_SEND)
+        mqtt_state_suffix = entry.data.get(CONF_MQTT_STATE_SUFFIX, DEFAULT_MQTT_STATE_SUFFIX)
+        mqtt_command_suffix = entry.data.get(CONF_MQTT_COMMAND_SUFFIX, DEFAULT_MQTT_COMMAND_SUFFIX)
+        mqtt_qos = entry.data.get(CONF_MQTT_QOS, DEFAULT_MQTT_QOS)
+        
+        _LOGGER.info("Creating coordinator for MQTT connection: %s:%s", mqtt_broker, mqtt_port)
+        _LOGGER.debug("MQTT topics - Recv: %s, Send: %s, QoS: %d", 
+                     mqtt_topic_recv, mqtt_topic_send, mqtt_qos)
+        
+        coordinator = EzvilleWallpadCoordinator(
+            hass,
+            config_entry=entry,
+            connection_type=connection_type,
+            mqtt_broker=mqtt_broker,
+            mqtt_port=mqtt_port,
+            mqtt_username=mqtt_username,
+            mqtt_password=mqtt_password,
+            mqtt_topic_recv=mqtt_topic_recv,
+            mqtt_topic_send=mqtt_topic_send,
+            mqtt_state_suffix=mqtt_state_suffix,
+            mqtt_command_suffix=mqtt_command_suffix,
+            mqtt_qos=mqtt_qos,
+            update_interval=None,  # No polling for MQTT
+        )
+    else:
+        _LOGGER.error("Invalid connection type: %s", connection_type)
+        return False
+
+    # Test connection
+    try:
+        _LOGGER.debug("Testing initial connection...")
+        await coordinator.async_config_entry_first_refresh()
+        _LOGGER.info("Initial connection successful")
+    except Exception as err:
+        _LOGGER.error("Failed to connect to Ezville Wallpad: %s", err)
+        raise ConfigEntryNotReady from err
+
+    # Store coordinator
+    hass.data.setdefault(DOMAIN, {})
+    hass.data[DOMAIN][entry.entry_id] = coordinator
+
+    # Setup platforms based on devices and capabilities
+    platforms_to_load = coordinator.get_platforms_to_load()
+    
+    if platforms_to_load:
+        _LOGGER.info("Loading platforms: %s", platforms_to_load)
+        coordinator._platform_loaded.update(platforms_to_load)
+        await hass.config_entries.async_forward_entry_setups(entry, list(platforms_to_load))
+    else:
+        _LOGGER.warning("No platforms to load - check capabilities and devices")
+
+    # Setup options update listener
+    entry.async_on_unload(entry.add_update_listener(async_reload_entry))
+    
+    # Register services
+    await async_setup_services(hass, coordinator)
+
+    _LOGGER.info("Ezville Wallpad integration setup complete with %d devices", 
+                len(coordinator.devices))
+    return True
+
+
+async def async_setup_services(hass: HomeAssistant, coordinator: EzvilleWallpadCoordinator):
+    """Set up services for Ezville Wallpad."""
+    import voluptuous as vol
+    import homeassistant.helpers.config_validation as cv
+    
+    async def send_raw_command(call):
+        """Handle send raw command service."""
+        device_id = call.data.get("device_id")
+        command = call.data.get("command") 
+        data = call.data.get("data", "0x00")
+        
+        _LOGGER.debug("Service call: send_raw_command - device_id=%s, command=%s, data=%s",
+                     device_id, command, data)
+        
+        try:
+            # Convert hex strings to integers
+            device_id_int = int(device_id, 16) if isinstance(device_id, str) else device_id
+            command_int = int(command, 16) if isinstance(command, str) else command
+            data_int = int(data, 16) if isinstance(data, str) else data
+            
+            # Create raw packet
+            packet = bytearray([0xF7, device_id_int, 0x01, command_int, 0x01, data_int, 0x00, 0x00])
+            
+            # Generate checksum
+            checksum = 0
+            for b in packet[:-2]:
+                checksum ^= b
+            add = sum(packet[:-2]) & 0xFF
+            packet[-2] = checksum
+            packet[-1] = add
+            
+            # Send via coordinator
+            if coordinator.client._conn:
+                await hass.async_add_executor_job(
+                    coordinator.client._conn.send, bytes(packet)
+                )
+                _LOGGER.info("Raw command sent: %s", packet.hex())
+            else:
+                _LOGGER.error("Connection not established")
+            
+        except Exception as err:
+            _LOGGER.error("Failed to send raw command: %s", err)
+    
+    async def dump_packets(call):
+        """Handle dump packets service.""" 
+        duration = call.data.get("duration", 30)
+        _LOGGER.info("Starting packet dump for %d seconds", duration)
+        coordinator.client.dump_time = duration
+        await coordinator.client._dump_packets()
+    
+    async def restart_connection(call):
+        """Handle restart connection service."""
+        _LOGGER.info("Restarting connection...")
+        await hass.async_add_executor_job(coordinator.client.close)
+        await coordinator.client.async_connect()
+        _LOGGER.info("Connection restarted")
+    
+    async def test_device(call):
+        """Handle test device service."""
+        device_type = call.data.get("device_type")
+        _LOGGER.info("Testing device type: %s", device_type)
+        # Send a state query for the device
+        if device_type in coordinator.capabilities:
+            # This would send a state query - implementation depends on device type
+            pass
+    
+    async def list_devices(call):
+        """List all discovered devices."""
+        devices_info = []
+        for device_key, device_info in coordinator.devices.items():
+            devices_info.append({
+                "key": device_key,
+                "type": device_info["device_type"],
+                "id": device_info["device_id"],
+                "name": device_info["name"],
+                "state": device_info["state"]
+            })
+        _LOGGER.info("Current devices: %s", devices_info)
+        return {"devices": devices_info}
+    
+    # Register services only once
+    if not hass.services.has_service(DOMAIN, "send_raw_command"):
+        hass.services.async_register(
+            DOMAIN, 
+            "send_raw_command",
+            send_raw_command,
+            schema=vol.Schema({
+                vol.Required("device_id"): str,
+                vol.Required("command"): str,
+                vol.Optional("data", default="0x00"): str,
+            })
+        )
+        _LOGGER.debug("Registered service: send_raw_command")
+    
+    if not hass.services.has_service(DOMAIN, "dump_packets"):
+        hass.services.async_register(
+            DOMAIN,
+            "dump_packets", 
+            dump_packets,
+            schema=vol.Schema({
+                vol.Required("duration"): vol.All(int, vol.Range(min=1, max=300)),
+            })
+        )
+        _LOGGER.debug("Registered service: dump_packets")
+    
+    if not hass.services.has_service(DOMAIN, "restart_connection"):
+        hass.services.async_register(DOMAIN, "restart_connection", restart_connection)
+        _LOGGER.debug("Registered service: restart_connection")
+    
+    if not hass.services.has_service(DOMAIN, "test_device"):
+        hass.services.async_register(
+            DOMAIN,
+            "test_device",
+            test_device,
+            schema=vol.Schema({
+                vol.Required("device_type"): vol.In([
+                    "light", "plug", "thermostat", "fan", "gas", 
+                    "energy", "elevator", "doorbell"
+                ]),
+            })
+        )
+        _LOGGER.debug("Registered service: test_device")
+    
+    if not hass.services.has_service(DOMAIN, "list_devices"):
+        hass.services.async_register(
+            DOMAIN,
+            "list_devices",
+            list_devices,
+        )
+        _LOGGER.debug("Registered service: list_devices")
+
+
+async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+    """Unload a config entry."""
+    _LOGGER.info("Unloading Ezville Wallpad integration")
+    
+    # Get coordinator
+    coordinator = hass.data[DOMAIN][entry.entry_id]
+    
+    # Get loaded platforms
+    loaded_platforms = list(coordinator._platform_loaded)
+    
+    _LOGGER.debug("Unloading platforms: %s", loaded_platforms)
+    
+    # Unload platforms
+    unload_ok = await hass.config_entries.async_unload_platforms(entry, loaded_platforms)
+    
+    if unload_ok:
+        # Stop coordinator
+        await coordinator.async_shutdown()
+        
+        # Remove entry from data
+        hass.data[DOMAIN].pop(entry.entry_id)
+        
+        # Remove services if no other instances
+        if not hass.data[DOMAIN]:
+            _LOGGER.debug("Removing services")
+            hass.services.async_remove(DOMAIN, "send_raw_command")
+            hass.services.async_remove(DOMAIN, "dump_packets")
+            hass.services.async_remove(DOMAIN, "restart_connection")
+            hass.services.async_remove(DOMAIN, "test_device")
+            hass.services.async_remove(DOMAIN, "list_devices")
+
+    _LOGGER.info("Unload complete: %s", unload_ok)
+    return unload_ok
+
+
+async def async_reload_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """Reload config entry."""
+    _LOGGER.info("Reloading config entry")
+    await async_unload_entry(hass, entry)
+    await async_setup_entry(hass, entry)

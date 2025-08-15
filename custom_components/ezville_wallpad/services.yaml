@@ -1,0 +1,65 @@
+send_raw_command:
+  name: Send Raw Command
+  description: Send a raw RS485 command to the wallpad
+  fields:
+    device_id:
+      name: Device ID
+      description: Device identifier (hex format, e.g., 0x0E)
+      example: "0x0E"
+      required: true
+      selector:
+        text:
+    command:
+      name: Command
+      description: Command code (hex format, e.g., 0x41)
+      example: "0x41"
+      required: true
+      selector:
+        text:
+    data:
+      name: Data
+      description: Command data (hex format, e.g., 0x01)
+      example: "0x01"
+      required: false
+      selector:
+        text:
+
+dump_packets:
+  name: Dump Packets
+  description: Enable packet dumping for debugging
+  fields:
+    duration:
+      name: Duration
+      description: Duration in seconds to dump packets
+      example: 30
+      required: true
+      selector:
+        number:
+          min: 1
+          max: 300
+          unit_of_measurement: "seconds"
+
+restart_connection:
+  name: Restart Connection
+  description: Restart the RS485 connection
+  
+test_device:
+  name: Test Device
+  description: Test communication with a specific device
+  fields:
+    device_type:
+      name: Device Type
+      description: Type of device to test
+      example: "light"
+      required: true
+      selector:
+        select:
+          options:
+            - "light"
+            - "plug"
+            - "thermostat"
+            - "fan"
+            - "gas"
+            - "energy"
+            - "elevator"
+            - "doorbell"

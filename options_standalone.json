@@ -1,0 +1,39 @@
+{
+  "serial_mode": "socket",
+  "socket": {
+    "address": "192.168.1.100",
+    "port": 8899
+  },
+  "sockets": [
+    {
+      "address": "192.168.1.100",
+      "port": 8899,
+      "capabilities": "ALL"
+    }
+  ],
+  "rs485": {
+    "port": "/dev/ttyUSB0",
+    "baudrate": 9600,
+    "bytesize": 8,
+    "parity": "E",
+    "stopbits": 1,
+    "max_retry": 10,
+    "dump_time": 0
+  },
+  "mqtt": {
+    "server": "192.168.1.100",
+    "port": 1883,
+    "need_login": true,
+    "user": "mqtt_user",
+    "passwd": "mqtt_password",
+    "discovery": true,
+    "prefix": "ezville",
+    "state_topic_suffix": "/state",
+    "command_topic_suffix": "/command"
+  },
+  "wallpad_mode": "on",
+  "log": {
+    "to_file": false,
+    "filename": "logs/ezville_wallpad.log"
+  }
+}

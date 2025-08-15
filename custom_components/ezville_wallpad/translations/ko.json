@@ -1,0 +1,94 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "이지빌 월패드 설정",
+        "description": "이지빌 월패드의 연결 방식을 선택하세요",
+        "data": {
+          "connection_type": "연결 방식"
+        }
+      },
+      "serial": {
+        "title": "시리얼 연결",
+        "description": "RS485 통신을 위한 시리얼 연결을 설정하세요",
+        "data": {
+          "serial_port": "시리얼 포트",
+          "scan_interval": "스캔 간격 (초)",
+          "max_retry": "최대 재시도 횟수",
+          "dump_time": "패킷 덤프 시간 (초, 0=비활성화)",
+          "log_to_file": "파일 로깅 활성화",
+          "capabilities": "활성화할 장치 타입"
+        }
+      },
+      "socket": {
+        "title": "소켓 연결",
+        "description": "TCP/IP 소켓 연결을 설정하세요", 
+        "data": {
+          "host": "호스트",
+          "port": "포트",
+          "scan_interval": "스캔 간격 (초)",
+          "max_retry": "최대 재시도 횟수",
+          "dump_time": "패킷 덤프 시간 (초, 0=비활성화)",
+          "log_to_file": "파일 로깅 활성화",
+          "capabilities": "활성화할 장치 타입"
+        }
+      },
+      "mqtt": {
+        "title": "MQTT 연결",
+        "description": "MQTT 브로커를 통한 연결을 설정하세요",
+        "data": {
+          "mqtt_broker": "MQTT 브로커 주소",
+          "mqtt_port": "MQTT 포트",
+          "mqtt_username": "MQTT 사용자명 (옵션)",
+          "mqtt_password": "MQTT 비밀번호 (옵션)",
+          "mqtt_topic_recv": "수신 토픽",
+          "mqtt_topic_send": "송신 토픽",
+          "mqtt_state_suffix": "상태 토픽 접미사",
+          "mqtt_command_suffix": "명령 토픽 접미사",
+          "mqtt_qos": "QoS 레벨 (0-2)",
+          "log_to_file": "파일 로깅 활성화",
+          "capabilities": "활성화할 장치 타입"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "장치에 연결할 수 없습니다"
+    },
+    "abort": {
+      "already_configured": "장치가 이미 설정되어 있습니다"
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "이지빌 월패드 옵션",
+        "data": {
+          "scan_interval": "스캔 간격 (초)",
+          "max_retry": "최대 재시도 횟수",
+          "dump_time": "패킷 덤프 시간 (초)",
+          "mqtt_topic_recv": "MQTT 수신 토픽",
+          "mqtt_topic_send": "MQTT 송신 토픽",
+          "mqtt_state_suffix": "MQTT 상태 토픽 접미사",
+          "mqtt_command_suffix": "MQTT 명령 토픽 접미사",
+          "mqtt_qos": "MQTT QoS 레벨 (0-2)",
+          "log_to_file": "파일 로깅 활성화",
+          "capabilities": "활성화할 장치 타입"
+        }
+      }
+    }
+  },
+  "selector": {
+    "capabilities": {
+      "options": {
+        "light": "조명",
+        "plug": "스마트플러그",
+        "thermostat": "온도조절기",
+        "fan": "환기팬",
+        "gas": "가스밸브",
+        "energy": "에너지 모니터링",
+        "elevator": "엘리베이터 제어",
+        "doorbell": "도어벨 시스템"
+      }
+    }
+  }
+}

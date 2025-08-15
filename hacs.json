@@ -1,0 +1,17 @@
+{
+  "name": "Ezville Wallpad",
+  "content_in_root": false,
+  "render_readme": true,
+  "domains": [
+    "light",
+    "switch", 
+    "sensor",
+    "climate",
+    "fan",
+    "valve",
+    "button",
+    "binary_sensor"
+  ],
+  "iot_class": "Local Polling",
+  "version": "1.0.0"
+}

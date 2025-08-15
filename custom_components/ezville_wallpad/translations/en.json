@@ -1,0 +1,94 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Ezville Wallpad Setup",
+        "description": "Select connection type for your Ezville Wallpad",
+        "data": {
+          "connection_type": "Connection Type"
+        }
+      },
+      "serial": {
+        "title": "Serial Connection",
+        "description": "Configure serial connection for RS485 communication",
+        "data": {
+          "serial_port": "Serial Port",
+          "scan_interval": "Scan Interval (seconds)",
+          "max_retry": "Max Retry Attempts",
+          "dump_time": "Packet Dump Time (seconds, 0=disabled)",
+          "log_to_file": "Enable File Logging",
+          "capabilities": "Enabled Device Types"
+        }
+      },
+      "socket": {
+        "title": "Socket Connection", 
+        "description": "Configure TCP/IP socket connection",
+        "data": {
+          "host": "Host",
+          "port": "Port",
+          "scan_interval": "Scan Interval (seconds)",
+          "max_retry": "Max Retry Attempts",
+          "dump_time": "Packet Dump Time (seconds, 0=disabled)",
+          "log_to_file": "Enable File Logging",
+          "capabilities": "Enabled Device Types"
+        }
+      },
+      "mqtt": {
+        "title": "MQTT Connection",
+        "description": "Configure connection through MQTT broker",
+        "data": {
+          "mqtt_broker": "MQTT Broker Address",
+          "mqtt_port": "MQTT Port",
+          "mqtt_username": "MQTT Username (optional)",
+          "mqtt_password": "MQTT Password (optional)",
+          "mqtt_topic_recv": "Receive Topic",
+          "mqtt_topic_send": "Send Topic",
+          "mqtt_state_suffix": "State Topic Suffix",
+          "mqtt_command_suffix": "Command Topic Suffix",
+          "mqtt_qos": "QoS Level (0-2)",
+          "log_to_file": "Enable File Logging",
+          "capabilities": "Enabled Device Types"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Failed to connect to the device"
+    },
+    "abort": {
+      "already_configured": "Device is already configured"
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Ezville Wallpad Options",
+        "data": {
+          "scan_interval": "Scan Interval (seconds)",
+          "max_retry": "Max Retry Attempts",
+          "dump_time": "Packet Dump Time (seconds)",
+          "mqtt_topic_recv": "MQTT Receive Topic",
+          "mqtt_topic_send": "MQTT Send Topic",
+          "mqtt_state_suffix": "MQTT State Topic Suffix",
+          "mqtt_command_suffix": "MQTT Command Topic Suffix",
+          "mqtt_qos": "MQTT QoS Level (0-2)",
+          "log_to_file": "Enable File Logging", 
+          "capabilities": "Enabled Device Types"
+        }
+      }
+    }
+  },
+  "selector": {
+    "capabilities": {
+      "options": {
+        "light": "Lights",
+        "plug": "Smart Plugs",
+        "thermostat": "Thermostats",
+        "fan": "Ventilation Fans",
+        "gas": "Gas Valves",
+        "energy": "Energy Monitoring",
+        "elevator": "Elevator Controls",
+        "doorbell": "Doorbell System"
+      }
+    }
+  }
+}
