@@ -164,10 +164,13 @@ class EzvilleFan(CoordinatorEntity, FanEntity):
         
         self.async_write_ha_state()
 
-    @callback
     def _handle_coordinator_update(self) -> None:
         """Handle updated data from the coordinator."""
-        self.async_write_ha_state()
+        # Schedule update safely from any thread
+        if hasattr(self, 'hass') and self.hass:
+            self.hass.loop.call_soon_threadsafe(self.async_write_ha_state)
+        else:
+            _LOGGER.warning("Cannot update state - hass not available")
 
     async def async_added_to_hass(self) -> None:
         """When entity is added to hass."""

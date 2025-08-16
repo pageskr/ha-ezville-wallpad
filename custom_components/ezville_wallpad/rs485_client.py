@@ -436,7 +436,7 @@ class EzvilleRS485Client:
                         # Extract room and device info
                         grp_id = device_num >> 4
                         rm_id = device_num & 0x0F
-                        _LOGGER.info("=> Light state: Group %d, Room %d", grp_id, rm_id)
+                        _LOGGER.info("=> Light state: Group %d, Room %d (device_num=0x%02X)", grp_id, rm_id, device_num)
                         
                         if len(packet) > 4:
                             light_count = packet[4]
@@ -475,7 +475,7 @@ class EzvilleRS485Client:
                     elif device_type == "plug":
                         grp_id = device_num >> 4
                         rm_id = device_num & 0x0F
-                        _LOGGER.info("=> Plug state: Group %d, Room %d", grp_id, rm_id)
+                        _LOGGER.info("=> Plug state: Group %d, Room %d (device_num=0x%02X)", grp_id, rm_id, device_num)
                         
                         if len(packet) > 5:
                             data_length = packet[4]
@@ -531,50 +531,124 @@ class EzvilleRS485Client:
                     elif device_type == "thermostat":
                         grp_id = device_num >> 4
                         rm_id = device_num & 0x0F
-                        _LOGGER.info("=> Thermostat state: Group %d, Room %d", grp_id, rm_id)
+                        _LOGGER.info("=> Thermostat state: Group %d, Room %d (device_num=0x%02X)", grp_id, rm_id, device_num)
                         
-                        if len(packet) > 8:
-                            room_count = (packet[4] - 5) // 2
-                            _LOGGER.info("=> Thermostat count: %d", room_count)
+                        if len(packet) > 4:
+                            data_length = packet[4]
+                            _LOGGER.info("=> Thermostat data_length: %d bytes", data_length)
                             
-                            # Process each thermostat
-                            for thermo_id in range(1, room_count + 1):
-                                device_key = f"{device_type}_{thermo_id}"
+                            # Log raw data for analysis
+                            if len(packet) > 5:
+                                _LOGGER.debug("=> Thermostat packet data: %s", 
+                                             ' '.join([f'{b:02X}' for b in packet[5:]]))
+                            
+                            # Different parsing based on packet format
+                            if device_num == 0x1F and data_length == 0x0D:  # Special format from log
+                                # Format: f7 36 1f 81 0d 00 00 0f 00 00 05 1e 05 1c 05 1b 05 1b 5f cc
+                                # bytes 5-9: header/status bytes
+                                # bytes 10-11: temp pair 1 (target, current)
+                                # bytes 12-13: temp pair 2
+                                # bytes 14-15: temp pair 3
+                                # bytes 16-17: temp pair 4
+                                _LOGGER.info("=> Special thermostat packet format detected")
                                 
-                                # Extract state
-                                mode_on = ((packet[6] & 0x1F) >> (thermo_id - 1)) & 1
-                                away_on = ((packet[7] & 0x1F) >> (thermo_id - 1)) & 1
-                                target_temp = packet[8 + thermo_id * 2] if len(packet) > 8 + thermo_id * 2 else 0
-                                current_temp = packet[9 + thermo_id * 2] if len(packet) > 9 + thermo_id * 2 else 0
+                                # Parse temperature pairs starting from byte 10
+                                temp_start = 10
+                                room_count = 0
                                 
-                                individual_state = {
-                                    "mode": 1 if mode_on else 0,
-                                    "away": away_on,
-                                    "current_temperature": current_temp,
-                                    "target_temperature": target_temp
-                                }
-                                _LOGGER.info("=> Thermostat %s - Mode: %s, Away: %s, Current: %d°C, Target: %d°C", 
-                                           device_key, "Heat" if mode_on else "Off", "On" if away_on else "Off",
-                                           current_temp, target_temp)
+                                # Count valid temperature pairs
+                                for i in range(4):
+                                    idx = temp_start + i * 2
+                                    if idx + 1 < len(packet) and (packet[idx] > 0 or packet[idx + 1] > 0):
+                                        room_count += 1
                                 
-                                # Check if new device
-                                if device_key not in self._discovered_devices:
-                                    self._discovered_devices.add(device_key)
-                                    _LOGGER.info("=> NEW DEVICE discovered: %s", device_key)
+                                _LOGGER.info("=> Found %d thermostat(s) with temperature data", room_count)
+                                
+                                # Process each temperature pair
+                                for i in range(room_count):
+                                    idx = temp_start + i * 2
+                                    if idx + 1 < len(packet):
+                                        device_key = f"{device_type}_{i+1}"
+                                        # Swap target/current based on actual data pattern
+                                        target_temp = packet[idx]
+                                        current_temp = packet[idx + 1]
+                                        
+                                        # Detect if temperatures seem swapped (current > 50 is unlikely)
+                                        if current_temp > 50 and target_temp < 50:
+                                            target_temp, current_temp = current_temp, target_temp
+                                        
+                                        individual_state = {
+                                            "mode": 1,  # Default to heat mode
+                                            "away": False,
+                                            "current_temperature": current_temp,
+                                            "target_temperature": target_temp
+                                        }
+                                        
+                                        _LOGGER.info("=> Thermostat %s - Current: %d°C, Target: %d°C (idx=%d)",
+                                                   device_key, current_temp, target_temp, idx)
+                                        
+                                        # Device discovery and callback handling
+                                        if device_key not in self._discovered_devices:
+                                            self._discovered_devices.add(device_key)
+                                            _LOGGER.info("=> NEW DEVICE discovered: %s", device_key)
+                                            
+                                            for callback in self._device_discovery_callbacks:
+                                                try:
+                                                    callback(device_type, i+1)
+                                                except Exception as err:
+                                                    _LOGGER.error("Error in discovery callback: %s", err)
+                                        
+                                        self._device_states[device_key] = individual_state
+                                        
+                                        if device_type in self._callbacks:
+                                            self._callbacks[device_type](device_type, i+1, individual_state)
+                                        
+                            else:
+                                # Standard thermostat packet format
+                                room_count = (data_length - 5) // 2 if data_length > 5 else 0
+                                _LOGGER.info("=> Standard format, calculated room count: %d", room_count)
+                                
+                                # Process each thermostat
+                                for thermo_id in range(1, min(room_count + 1, 16)):
+                                    device_key = f"{device_type}_{thermo_id}"
                                     
-                                    # Call discovery callbacks
-                                    for callback in self._device_discovery_callbacks:
-                                        try:
-                                            callback(device_type, thermo_id)
-                                        except Exception as err:
-                                            _LOGGER.error("Error in discovery callback: %s", err)
-                                
-                                # Update state
-                                self._device_states[device_key] = individual_state
-                                
-                                # Call callback
-                                if device_type in self._callbacks:
-                                    self._callbacks[device_type](device_type, thermo_id, individual_state)
+                                    # Check if we have enough data
+                                    if len(packet) < 8 + thermo_id * 2 + 1:
+                                        _LOGGER.warning("Not enough data for thermostat %d", thermo_id)
+                                        continue
+                                    
+                                    # Extract state from standard format
+                                    mode_on = ((packet[6] & 0x1F) >> (thermo_id - 1)) & 1 if thermo_id <= 5 and len(packet) > 6 else False
+                                    away_on = ((packet[7] & 0x1F) >> (thermo_id - 1)) & 1 if thermo_id <= 5 and len(packet) > 7 else False
+                                    target_temp = packet[8 + thermo_id * 2] if len(packet) > 8 + thermo_id * 2 else 0
+                                    current_temp = packet[9 + thermo_id * 2] if len(packet) > 9 + thermo_id * 2 else 0
+                                    
+                                    individual_state = {
+                                        "mode": 1 if mode_on else 0,
+                                        "away": away_on,
+                                        "current_temperature": current_temp,
+                                        "target_temperature": target_temp
+                                    }
+                                    
+                                    _LOGGER.info("=> Thermostat %s - Mode: %s, Away: %s, Current: %d°C, Target: %d°C",
+                                               device_key, "Heat" if mode_on else "Off", "On" if away_on else "Off",
+                                               current_temp, target_temp)
+                                    
+                                    # Device discovery and callback handling
+                                    if device_key not in self._discovered_devices:
+                                        self._discovered_devices.add(device_key)
+                                        _LOGGER.info("=> NEW DEVICE discovered: %s", device_key)
+                                        
+                                        for callback in self._device_discovery_callbacks:
+                                            try:
+                                                callback(device_type, thermo_id)
+                                            except Exception as err:
+                                                _LOGGER.error("Error in discovery callback: %s", err)
+                                    
+                                    self._device_states[device_key] = individual_state
+                                    
+                                    if device_type in self._callbacks:
+                                        self._callbacks[device_type](device_type, thermo_id, individual_state)
                     
                     else:
                         # Other device types (fan, gas, energy, elevator, doorbell)
@@ -620,6 +694,21 @@ class EzvilleRS485Client:
         # Device 0x39 (plug) with command 0x01 might be a control response
         if device_id == 0x39 and command == 0x01:
             _LOGGER.info("=> Plug control response packet: device_num=0x%02X", device_num)
+            return
+        
+        # Device 0x36 (thermostat) with command 0x01
+        if device_id == 0x36 and command == 0x01:
+            _LOGGER.info("=> Thermostat control response packet: device_num=0x%02X", device_num)
+            return
+        
+        # Device 0x32 (fan) with command 0x01
+        if device_id == 0x32 and command == 0x01:
+            _LOGGER.info("=> Fan control response packet: device_num=0x%02X", device_num)
+            return
+        
+        # Device 0x0E (light) with command 0x01
+        if device_id == 0x0E and command == 0x01:
+            _LOGGER.info("=> Light control response packet: device_num=0x%02X", device_num)
             return
         
         # Device 0x60 (unknown) with command 0x01
