@@ -269,10 +269,10 @@ class EzvilleRS485Client:
     def _process_buffer(self, buffer: bytearray):
         """Process received data buffer using ezville_wallpad.py logic."""
         processed_count = 0
-        _LOGGER.debug("=== Processing buffer with %d bytes ===", len(buffer))
+        _LOGGER.debug("=== Processing buffer with %d bytes: %s ===", len(buffer), buffer.hex())
         
         while len(buffer) > 0:
-            # Remove any leading bytes before 0xF7
+            # Find the next F7 marker
             start_index = -1
             for i in range(len(buffer)):
                 if buffer[i] == 0xF7:
@@ -290,16 +290,13 @@ class EzvilleRS485Client:
                 _LOGGER.debug("Removing %d bytes before 0xF7: %s", start_index, buffer[0:start_index].hex())
                 del buffer[0:start_index]
             
-            # Need at least 7 bytes for minimum packet
-            if len(buffer) < 7:
-                _LOGGER.debug("Buffer too small (%d bytes), waiting for more data", len(buffer))
-                return
-            
             # Skip consecutive 0xF7 at start
             while len(buffer) > 1 and buffer[0] == 0xF7 and buffer[1] == 0xF7:
                 del buffer[0]
             
-            if len(buffer) < 7:
+            # Need at least 4 bytes to determine packet type
+            if len(buffer) < 4:
+                _LOGGER.debug("Buffer too small (%d bytes), waiting for more data", len(buffer))
                 return
             
             # Get headers
@@ -307,19 +304,38 @@ class EzvilleRS485Client:
             header_2 = buffer[2]
             header_3 = buffer[3]
             
-            _LOGGER.debug("Packet headers: 0x%02X 0x%02X 0x%02X", header_1, header_2, header_3)
+            _LOGGER.debug("Analyzing packet - F7 %02X %02X %02X ...", header_1, header_2, header_3)
             
-            # Check if this is a state packet
+            # Determine packet length
+            packet_length = 8  # Default length
+            
+            # Check if this is a state packet with variable length
             if header_1 in STATE_HEADER and header_3 == STATE_HEADER[header_1][1]:
                 if len(buffer) < 5:
+                    _LOGGER.debug("State packet but buffer too small for length byte")
                     return
                 data_length = buffer[4]
                 packet_length = 5 + data_length + 2  # F7 + 4 headers + data + checksum + add
-                _LOGGER.debug("State packet detected, data length: %d, total packet length: %d", data_length, packet_length)
+                _LOGGER.debug("State packet: device=0x%02X, data_length=%d, total_length=%d", 
+                             header_1, data_length, packet_length)
             else:
-                # Other packet types (default 8 bytes)
-                packet_length = 8
-                _LOGGER.debug("Standard packet, length: %d", packet_length)
+                # Standard 8-byte packet
+                _LOGGER.debug("Standard packet: device=0x%02X, cmd=0x%02X, fixed length=8", 
+                             header_1, header_3)
+            
+            # Find next F7 to ensure we don't include part of next packet
+            next_f7 = -1
+            for i in range(1, len(buffer)):
+                if buffer[i] == 0xF7:
+                    next_f7 = i
+                    _LOGGER.debug("Found next F7 at position %d", next_f7)
+                    break
+            
+            # Adjust packet length if next F7 found before expected end
+            if next_f7 != -1 and next_f7 < packet_length:
+                _LOGGER.debug("Adjusting packet length from %d to %d due to next F7", 
+                             packet_length, next_f7)
+                packet_length = next_f7
             
             # Check if we have complete packet
             if len(buffer) < packet_length:
@@ -329,6 +345,9 @@ class EzvilleRS485Client:
             # Extract packet
             packet = bytes(buffer[0:packet_length])
             del buffer[0:packet_length]
+            
+            _LOGGER.debug("Extracted packet [%d]: %s (length=%d)", 
+                         processed_count + 1, packet.hex(), len(packet))
             
             # Verify checksum
             if not self._verify_checksum(packet):
@@ -347,26 +366,46 @@ class EzvilleRS485Client:
     def _verify_checksum(self, packet: bytes) -> bool:
         """Verify packet checksum."""
         if len(packet) < 2:
+            _LOGGER.warning("Packet too short for checksum: %d bytes", len(packet))
             return False
+        
+        # Log packet details for debugging
+        _LOGGER.debug("Verifying checksum for packet: %s", packet.hex())
+        _LOGGER.debug("  Packet length: %d bytes", len(packet))
+        _LOGGER.debug("  Data bytes: %s", packet[:-2].hex())
+        _LOGGER.debug("  Checksum byte: 0x%02X", packet[-2])
+        _LOGGER.debug("  Add byte: 0x%02X", packet[-1])
         
         # Calculate checksum (XOR of all bytes except last two)
         checksum = 0
-        for b in packet[:-2]:
+        for i, b in enumerate(packet[:-2]):
+            old_checksum = checksum
             checksum ^= b
+            _LOGGER.debug("  XOR step %d: 0x%02X ^ 0x%02X = 0x%02X", i, old_checksum, b, checksum)
         
         # Calculate ADD (sum of all bytes except last one)
         add = sum(packet[:-1]) & 0xFF
+        _LOGGER.debug("  Sum of bytes[:-1]: %d (0x%02X)", sum(packet[:-1]), add)
         
         # Get expected values from packet
         expected_checksum = packet[-2]
         expected_add = packet[-1]
         
-        # Debug log
-        _LOGGER.debug("Checksum: calc=0x%02X, expected=0x%02X | ADD: calc=0x%02X, expected=0x%02X",
-                     checksum, expected_checksum, add, expected_add)
+        # Check results
+        checksum_ok = checksum == expected_checksum
+        add_ok = add == expected_add
+        
+        _LOGGER.debug("Checksum verification:")
+        _LOGGER.debug("  Checksum: calc=0x%02X, expected=0x%02X, %s", 
+                     checksum, expected_checksum, "OK" if checksum_ok else "FAIL")
+        _LOGGER.debug("  ADD: calc=0x%02X, expected=0x%02X, %s",
+                     add, expected_add, "OK" if add_ok else "FAIL")
+        
+        if not checksum_ok or not add_ok:
+            _LOGGER.warning("Checksum verification failed for packet: %s", packet.hex())
         
         # Both checksum and add must match
-        return checksum == expected_checksum and add == expected_add
+        return checksum_ok and add_ok
 
     def _process_packet(self, packet: bytes):
         """Process a received packet with detailed logging."""
@@ -560,9 +599,20 @@ class EzvilleRS485Client:
             if command == expected_ack:
                 _LOGGER.info("=> ACK packet for %s command", device_type)
                 return
+            else:
+                _LOGGER.debug("=> Device 0x%02X in ACK_HEADER but command 0x%02X != expected 0x%02X",
+                             device_id, command, expected_ack)
         
-        # Unknown packet
-        _LOGGER.warning("=> Unknown packet type")
+        # Unknown packet - log detailed info
+        _LOGGER.warning("=> Unknown packet type:")
+        _LOGGER.warning("   Packet: %s", packet.hex())
+        _LOGGER.warning("   Device ID: 0x%02X", device_id)
+        _LOGGER.warning("   Device Num: 0x%02X (dec: %d)", device_num, device_num)
+        _LOGGER.warning("   Command: 0x%02X", command)
+        _LOGGER.warning("   Known state headers: %s", 
+                       ', '.join([f"0x{k:02X}" for k in STATE_HEADER.keys()]))
+        _LOGGER.warning("   Known ACK headers: %s", 
+                       ', '.join([f"0x{k:02X}" for k in ACK_HEADER.keys()]))
 
     def _parse_state(self, device_type: str, packet: bytes) -> Optional[Dict[str, Any]]:
         """Parse state packet based on device type."""

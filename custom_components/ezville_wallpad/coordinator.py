@@ -444,7 +444,11 @@ class EzvilleWallpadCoordinator(DataUpdateCoordinator):
         # Call entity callbacks if registered
         if device_key in self._entity_callbacks:
             for callback in self._entity_callbacks[device_key]:
-                callback()
+                # Call callbacks safely from any thread
+                try:
+                    callback()
+                except Exception as err:
+                    _LOGGER.error("Error in entity callback for %s: %s", device_key, err)
 
     def register_entity_callback(self, device_key: str, callback: Callable):
         """Register a callback for entity updates."""

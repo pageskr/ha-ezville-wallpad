@@ -78,7 +78,6 @@ class EzvilleWallpadDevice(CoordinatorEntity):
             sw_version="1.0.0",
             configuration_url=DOCUMENTATION_URL,
             suggested_area=self._get_suggested_area(device_type),
-            via_device=(DOMAIN, "main"),
         )
 
     def _get_suggested_area(self, device_type: str) -> Optional[str]:
@@ -133,5 +132,5 @@ class EzvilleWallpadDevice(CoordinatorEntity):
 
     def _handle_state_update(self, state: Dict[str, Any]) -> None:
         """Handle state update from coordinator."""
-        # Schedule update
-        self.async_write_ha_state()
+        # This method is not used - actual entities have their own update handlers
+        pass
