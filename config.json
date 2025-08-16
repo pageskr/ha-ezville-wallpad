@@ -31,12 +31,14 @@
       "discovery": true,
       "prefix": "ezville",
       "state_topic_suffix": "/state",
-      "command_topic_suffix": "/command"
+      "command_topic_suffix": "/command",
+      "mqtt_data_topic": "ezville/raw/data"
     },
     "wallpad_mode": "on",
     "log": {
       "to_file": false,
-      "filename": "logs/ezville_wallpad.log"
+      "filename": "logs/ezville_wallpad.log",
+      "level": "INFO"
     }
   }
 }

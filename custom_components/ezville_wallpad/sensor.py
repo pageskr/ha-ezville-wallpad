@@ -49,6 +49,12 @@ async def async_setup_entry(
             entities.append(EzvilleEnergySensor(coordinator, device_key, device_info))
             _LOGGER.info("Added energy sensor for %s", device_key)
         
+        # Add unknown device sensor
+        if device_info["device_type"] == "unknown" and f"{device_key}_unknown" not in added_devices:
+            added_devices.add(f"{device_key}_unknown")
+            entities.append(EzvilleUnknownSensor(coordinator, device_key, device_info))
+            _LOGGER.info("Added unknown device sensor for %s", device_key)
+        
         if entities:
             async_add_entities(entities)
     
@@ -212,3 +218,81 @@ class EzvilleEnergySensor(CoordinatorEntity, SensorEntity):
             self._handle_coordinator_update
         )
         _LOGGER.debug("Energy sensor %s removed from hass", self._attr_name)
+
+
+class EzvilleUnknownSensor(CoordinatorEntity, SensorEntity):
+    """Ezville Unknown Device Sensor."""
+
+    def __init__(self, coordinator: EzvilleWallpadCoordinator, device_key: str, device_info: dict):
+        """Initialize the sensor."""
+        super().__init__(coordinator)
+        
+        self._device_key = device_key
+        self._device_info = device_info
+        device_id = device_info.get("device_id", "")
+        
+        # Entity attributes
+        self._attr_unique_id = f"{DOMAIN}_{device_key}_state"
+        self._attr_name = f"Unknown {device_id}"
+        self._attr_icon = "mdi:help-circle"
+        
+        # Device info from coordinator
+        self._attr_device_info = coordinator.get_device_info(device_key)
+        
+        _LOGGER.debug("Initialized unknown device sensor: %s", self._attr_name)
+
+    @property
+    def native_value(self) -> Optional[str]:
+        """Return the state of the sensor."""
+        device = self.coordinator.devices.get(self._device_key, {})
+        state = device.get("state", {})
+        # Return the raw data as string
+        return state.get("data", "No data")
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return entity specific state attributes."""
+        device = self.coordinator.devices.get(self._device_key, {})
+        state = device.get("state", {})
+        
+        attributes = {
+            "device_id": state.get("device_id", "Unknown"),
+            "device_num": state.get("device_num", 0),
+            "command": state.get("command", "Unknown"),
+            "raw_data": state.get("raw_data", "No data")
+        }
+        
+        return attributes
+
+    @property
+    def available(self) -> bool:
+        """Return if entity is available."""
+        return self._device_key in self.coordinator.devices
+
+    def _handle_coordinator_update(self) -> None:
+        """Handle updated data from the coordinator."""
+        # Schedule update safely from any thread
+        if hasattr(self, 'hass') and self.hass:
+            self.hass.loop.call_soon_threadsafe(self.async_write_ha_state)
+        else:
+            _LOGGER.warning("Cannot update state - hass not available")
+
+    async def async_added_to_hass(self) -> None:
+        """When entity is added to hass."""
+        await super().async_added_to_hass()
+        # Register for direct updates
+        self.coordinator.register_entity_callback(
+            self._device_key,
+            self._handle_coordinator_update
+        )
+        _LOGGER.debug("Unknown device sensor %s added to hass", self._attr_name)
+
+    async def async_will_remove_from_hass(self) -> None:
+        """When entity will be removed from hass."""
+        await super().async_will_remove_from_hass()
+        # Unregister callback
+        self.coordinator.unregister_entity_callback(
+            self._device_key,
+            self._handle_coordinator_update
+        )
+        _LOGGER.debug("Unknown device sensor %s removed from hass", self._attr_name)

@@ -225,34 +225,48 @@ logger = logging.getLogger(__name__)
 registered_entities = defaultdict(set)
 # 초기 기기 생성 여부 추적
 initial_devices_created = False
+# MQTT 데이터 처리를 위한 가상 연결 객체
+mqtt_virtual_conn = None
 
 
 class EzVilleSocket:
-    def __init__(self, addr, port, capabilities="ALL"):
+    def __init__(self, addr, port, capabilities="ALL", is_mqtt_mode=False):
         self.capabilities = capabilities
-        self._soc = socket.socket()
-        self._soc.connect((addr, port))
+        self.is_mqtt_mode = is_mqtt_mode  # MQTT 모드인지 확인
+        
+        if not is_mqtt_mode:
+            # 소켓 모드
+            self._soc = socket.socket()
+            self._soc.connect((addr, port))
 
-        self._recv_buf = bytearray()
-        self._pending_recv = 0
+            self._recv_buf = bytearray()
+            self._pending_recv = 0
 
-        self.set_timeout(5.0)
-        data = self._recv_raw(1)
-        self.set_timeout(None)
-        if not data:
-            logger.critical("no active packet at this socket!")
+            self.set_timeout(5.0)
+            data = self._recv_raw(1)
+            self.set_timeout(None)
+            if not data:
+                logger.critical("no active packet at this socket!")
+        else:
+            # MQTT 모드에서는 소켓 없이 버퍼만 사용
+            self._soc = None
+            self._recv_buf = bytearray()
+            self._pending_recv = 0
 
     def _recv_raw(self, count=1):
+        if self.is_mqtt_mode:
+            return bytearray()  # MQTT 모드에서는 빈 배열 반환
         return self._soc.recv(count)
 
     def recv(self, count=1):
         # socket은 버퍼와 in_waiting 직접 관리
-        while len(self._recv_buf) < count:
-            new_data = self._recv_raw(128)
-            if not new_data:
-                # new_data가 빈 경우, 대기 후 다시 시도
-                continue
-            self._recv_buf.extend(new_data)
+        if not self.is_mqtt_mode:
+            while len(self._recv_buf) < count:
+                new_data = self._recv_raw(128)
+                if not new_data:
+                    # new_data가 빈 경우, 대기 후 다시 시도
+                    continue
+                self._recv_buf.extend(new_data)
 
         self._pending_recv = max(self._pending_recv - count, 0)
 
@@ -261,7 +275,8 @@ class EzVilleSocket:
         return res
 
     def send(self, a):
-        self._soc.sendall(a)
+        if not self.is_mqtt_mode:
+            self._soc.sendall(a)
 
     def set_pending_recv(self):
         self._pending_recv = len(self._recv_buf)
@@ -270,13 +285,15 @@ class EzVilleSocket:
         return self._pending_recv
 
     def check_in_waiting(self):
-        if len(self._recv_buf) == 0:
-            new_data = self._recv_raw(128)
-            self._recv_buf.extend(new_data)
+        if not self.is_mqtt_mode:
+            if len(self._recv_buf) == 0:
+                new_data = self._recv_raw(128)
+                self._recv_buf.extend(new_data)
         return len(self._recv_buf)
 
     def set_timeout(self, a):
-        self._soc.settimeout(a)
+        if not self.is_mqtt_mode:
+            self._soc.settimeout(a)
 
 
 def init_option(argv):
@@ -334,7 +351,9 @@ def init_option(argv):
 
 
 def init_logger():
-    logger.setLevel(logging.INFO)
+    # 기본 로깅 레벨 설정 (나중에 옵션으로 변경 가능)
+    log_level = Options.get("log", {}).get("level", "INFO") if 'Options' in globals() else "INFO"
+    logger.setLevel(getattr(logging, log_level.upper(), logging.INFO))
 
     formatter = logging.Formatter(
         fmt="%(asctime)s %(levelname)-8s %(message)s", datefmt="%H:%M:%S"
@@ -370,6 +389,7 @@ def create_initial_devices():
     if initial_devices_created:
         return
     
+    logger.info("Creating initial devices...")
     prefix = Options["mqtt"]["prefix"]
     
     # Doorbell
@@ -435,6 +455,7 @@ def create_initial_devices():
         mqtt_discovery(p)
     
     initial_devices_created = True
+    logger.info("Initial devices created successfully.")
 
 
 def mqtt_init_discovery():
@@ -620,6 +641,13 @@ def mqtt_on_connect(mqtt, userdata, flags, rc):
         topic = f"{prefix}/+/+/+{command_suffix}"
         logger.info("subscribe %s", topic)
         mqtt.subscribe(topic, 0)
+    
+    # MQTT 데이터 토픽 구독 추가 (패킷 분석용)
+    if "mqtt_data_topic" in Options["mqtt"] and Options["mqtt"]["mqtt_data_topic"]:
+        data_topic = Options["mqtt"]["mqtt_data_topic"]
+        logger.info("subscribe MQTT data topic: %s", data_topic)
+        mqtt.message_callback_add(data_topic, on_mqtt_data_message)
+        mqtt.subscribe(data_topic, 0)
 
 
 def mqtt_on_disconnect(client, userdata, flags, rc):
@@ -763,6 +791,160 @@ def serial_verify_checksum(packet):
     return True
 
 
+# 이전 설정값을 저장하는 딕셔너리 (시그니처별로 저장)
+previous_mqtt_values = {}
+# 전체 패킷 시그니처별 마지막 패킷 저장
+previous_packet_values = {}
+
+def parse_mqtt_messages(data):
+    """수신된 바이트 스트림에서 'f7'로 시작하는 메시지를 분리"""
+    messages = []
+    current_msg = []
+    started = False
+    
+    for byte in data:
+        if byte == 0xf7:  # 새로운 메시지 시작
+            if started and current_msg:
+                messages.append(current_msg)
+                current_msg = []
+            started = True
+        if started:
+            current_msg.append(f"{byte:02x}")
+    
+    if current_msg:
+        messages.append(current_msg)
+    
+    return messages
+
+def check_and_process_mqtt_message(message):
+    """MQTT 메시지를 체크하고 변경된 경우에만 처리"""
+    global previous_mqtt_values
+    
+    if len(message) < 4:
+        return
+    
+    # 시그니처는 첫 4바이트
+    signature = "".join(message[:4])
+    setting_values = message[4:]  # 네번째 바이트 이후는 설정값
+    
+    # 시그니처에 해당하는 이전 설정값과 비교
+    if signature not in previous_mqtt_values or previous_mqtt_values[signature] != setting_values:
+        logger.info("MQTT Updated signature %s: %s", signature, " ".join(setting_values))
+        previous_mqtt_values[signature] = setting_values  # 이전 설정값 업데이트
+        
+        # 여기서 실제 패킷 분석 및 처리
+        analyze_mqtt_packet(message)
+
+def analyze_mqtt_packet(hex_message):
+    """MQTT 패킷을 분석하고 구성요소 업데이트"""
+    if not hex_message or hex_message[0] != 'f7':
+        return
+    
+    # 바이트 배열로 변환
+    try:
+        packet = bytearray([int(h, 16) for h in hex_message])
+    except ValueError:
+        logger.error("Invalid hex message: %s", hex_message)
+        return
+    
+    if len(packet) < 5:
+        return
+    
+    header_1 = packet[1]
+    header_2 = packet[2]
+    header_3 = packet[3]
+    
+    # State 패킷인지 확인
+    if header_1 in STATE_HEADER and header_3 == STATE_HEADER[header_1][1]:
+        device = STATE_HEADER[header_1][0]
+        # 기존 serial_receive_state 함수 사용
+        serial_receive_state(device, bytes(packet))
+        logger.debug("MQTT processed %s state packet: %s", device, " ".join(hex_message))
+    else:
+        # 알 수 없는 기기 처리
+        device_id = f"{header_1:02x}"
+        handle_unknown_mqtt_device(device_id, hex_message)
+
+def handle_unknown_mqtt_device(device_id, hex_message):
+    """알 수 없는 MQTT 기기 처리"""
+    prefix = Options["mqtt"]["prefix"]
+    state_suffix = Options["mqtt"]["state_topic_suffix"]
+    
+    # unknown 기기 등록
+    entity_name = f"unknown_{device_id}"
+    if entity_name not in registered_entities.get("unknown", set()):
+        # Discovery payload 생성
+        payload = {
+            "_intg": "sensor",
+            "~": f"{prefix}/unknown/{entity_name}",
+            "name": f"Unknown Device {device_id}",
+            "stat_t": "~/state",
+            "icon": "mdi:help-circle"
+        }
+        mqtt_discovery(payload)
+        
+        if "unknown" not in registered_entities:
+            registered_entities["unknown"] = set()
+        registered_entities["unknown"].add(entity_name)
+    
+    # 상태 업데이트
+    topic = f"{prefix}/unknown/{entity_name}/state"
+    value = " ".join(hex_message)
+    if last_topic_list.get(topic) != value:
+        logger.info("MQTT unknown device %s state: %s", device_id, value)
+        mqtt.publish(topic, value)
+        last_topic_list[topic] = value
+
+def handle_unknown_device(device_id, packet):
+    """알 수 없는 기기 처리 (소켓/MQTT 공통)"""
+    prefix = Options["mqtt"]["prefix"]
+    state_suffix = Options["mqtt"]["state_topic_suffix"]
+    
+    # unknown 기기 등록
+    entity_name = f"unknown_{device_id}"
+    if entity_name not in registered_entities.get("unknown", set()):
+        # Discovery payload 생성
+        payload = {
+            "_intg": "sensor",
+            "~": f"{prefix}/unknown/{entity_name}",
+            "name": f"Unknown Device {device_id}",
+            "stat_t": "~/state",
+            "icon": "mdi:help-circle"
+        }
+        mqtt_discovery(payload)
+        
+        if "unknown" not in registered_entities:
+            registered_entities["unknown"] = set()
+        registered_entities["unknown"].add(entity_name)
+    
+    # 상태 업데이트
+    topic = f"{prefix}/unknown/{entity_name}/state"
+    value = packet.hex()
+    if last_topic_list.get(topic) != value:
+        logger.info("Unknown device %s state: %s", device_id, value)
+        mqtt.publish(topic, value)
+        last_topic_list[topic] = value
+
+def on_mqtt_data_message(client, userdata, msg):
+    """MQTT 브로커로부터 메시지를 수신할 때 호출되는 콜백 함수"""
+    global mqtt_virtual_conn
+    
+    # 가상 연결 객체가 없으면 생성
+    if mqtt_virtual_conn is None:
+        mqtt_virtual_conn = EzVilleSocket("", 0, "ALL", is_mqtt_mode=True)
+    
+    data = msg.payload  # 수신된 데이터를 변수에 저장
+    
+    # 디버그용 (필요시 활성화)
+    # hex_values = [f"{byte:02x}" for byte in data]
+    # logger.debug("MQTT raw hex: %s", " ".join(hex_values))
+    
+    # 받은 데이터를 가상 연결의 버퍼에 추가
+    mqtt_virtual_conn._recv_buf.extend(data)
+    
+    # 기존 패킷 처리 로직 사용
+    process_packet_buffer(mqtt_virtual_conn)
+
 def process_packet_buffer(conn):
     """버퍼에서 완전한 패킷을 찾아 처리합니다."""
     while conn.check_in_waiting() > 0:
@@ -814,6 +996,14 @@ def process_packet_buffer(conn):
         if not serial_verify_checksum(packet):
             continue
         
+        # 중복 패킷 체크 - 시그니처로 확인
+        if len(packet) >= 4:
+            signature = packet[:4].hex()
+            # 이전과 똑같은 패킷이면 무시
+            if signature in previous_packet_values and previous_packet_values[signature] == packet:
+                continue
+            previous_packet_values[signature] = packet
+        
         # 패킷 처리
         if header_1 in STATE_HEADER and header_3 in STATE_HEADER[header_1]:
             device = STATE_HEADER[header_1][0]
@@ -822,6 +1012,11 @@ def process_packet_buffer(conn):
             header = packet[0] << 24 | packet[1] << 16 | packet[2] << 8 | packet[3]
             if header in serial_ack:
                 serial_ack_command(header)
+        else:
+            # 알 수 없는 기기 처리
+            device_id = f"{header_1:02x}"
+            logger.debug("Unknown packet detected - header: %02x %02x %02x, full: %s", header_1, header_2, header_3, packet.hex())
+            handle_unknown_device(device_id, packet)
 
 
 def serial_get_header(conn):
@@ -851,6 +1046,12 @@ def serial_get_header(conn):
 
 
 def serial_receive_state(device, packet):
+    # 알 수 없는 기기 처리
+    if device not in RS485_DEVICE:
+        device_id = f"{packet[1]:02x}"
+        handle_unknown_device(device_id, packet)
+        return
+    
     form = RS485_DEVICE[device]["state"]
     last = RS485_DEVICE[device]["last"]
     idn = (packet[1] << 8) | packet[2]

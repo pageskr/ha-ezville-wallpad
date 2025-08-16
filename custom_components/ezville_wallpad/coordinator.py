@@ -116,6 +116,10 @@ class EzvilleWallpadCoordinator(DataUpdateCoordinator):
         for device_type in self.capabilities:
             self.client.register_callback(device_type, self._device_update_callback)
             _LOGGER.debug("Registered callback for device type: %s", device_type)
+        
+        # Always register callback for unknown devices
+        self.client.register_callback("unknown", self._device_update_callback)
+        _LOGGER.debug("Registered callback for unknown devices")
 
     def _initialize_default_devices(self):
         """Initialize default devices for enabled capabilities."""
@@ -250,7 +254,7 @@ class EzvilleWallpadCoordinator(DataUpdateCoordinator):
 
     def _on_device_discovered(self, device_type: str, device_id: Any):
         """Handle new device discovery."""
-        if device_type not in self.capabilities:
+        if device_type != "unknown" and device_type not in self.capabilities:
             _LOGGER.debug("Ignoring discovered device %s_%s (not in capabilities)", 
                          device_type, device_id)
             return
@@ -309,6 +313,9 @@ class EzvilleWallpadCoordinator(DataUpdateCoordinator):
                 platforms_needed.add(Platform.BUTTON)
             if device_type == "doorbell" and Platform.BINARY_SENSOR not in self._platform_loaded:
                 platforms_needed.add(Platform.BINARY_SENSOR)
+        elif device_type == "unknown" and Platform.SENSOR not in self._platform_loaded:
+            # Use sensor platform for unknown devices
+            platforms_needed.add(Platform.SENSOR)
         
         if platforms_needed:
             _LOGGER.info("Loading platforms for %s: %s", device_type, platforms_needed)
@@ -406,8 +413,8 @@ class EzvilleWallpadCoordinator(DataUpdateCoordinator):
     @callback
     def _device_update_callback(self, device_type: str, device_id: Any, state: Dict[str, Any]):
         """Handle device state updates."""
-        # Skip if device type not in enabled capabilities
-        if device_type not in self.capabilities:
+        # Skip if device type not in enabled capabilities (except unknown)
+        if device_type != "unknown" and device_type not in self.capabilities:
             return
             
         # Convert device_id to string for consistent key format

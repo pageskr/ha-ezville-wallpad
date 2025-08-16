@@ -72,6 +72,7 @@ class EzvilleRS485Client:
         self._device_states = {}
         self._discovered_devices = set()
         self._device_discovery_callbacks = []
+        self._previous_mqtt_values = {}  # For MQTT deduplication
         
         # ACK mapping
         self._ack_map = defaultdict(lambda: defaultdict(dict))
@@ -254,9 +255,13 @@ class EzvilleRS485Client:
                 try:
                     data = self._conn.recv(128)
                     if data:
-                        buffer.extend(data)
-                        _LOGGER.debug("<== Received raw data: %s", data.hex())
-                        self._process_buffer(buffer)
+                        # For MQTT, special handling for multiple packets
+                        if self.connection_type == CONNECTION_TYPE_MQTT:
+                            self._process_mqtt_data(data)
+                        else:
+                            buffer.extend(data)
+                            _LOGGER.debug("<== Received raw data: %s", data.hex())
+                            self._process_buffer(buffer)
                 except Exception:
                     pass
                 
@@ -265,6 +270,51 @@ class EzvilleRS485Client:
             except Exception as err:
                 _LOGGER.error("Error in communication loop: %s", err)
                 time.sleep(1)
+    
+    def _process_mqtt_data(self, data: bytes):
+        """Process MQTT data by splitting F7 packets."""
+        messages = []
+        current_msg = []
+        started = False
+        
+        # Split by F7 markers
+        for byte in data:
+            if byte == 0xF7:  # New message start
+                if started and current_msg:
+                    messages.append(bytes(current_msg))
+                    current_msg = []
+                started = True
+            if started:
+                current_msg.append(byte)
+        
+        # Add the last message
+        if current_msg:
+            messages.append(bytes(current_msg))
+        
+        _LOGGER.debug("MQTT: Received %d packets from data", len(messages))
+        
+        # Process each message
+        for msg in messages:
+            if len(msg) < 4:
+                continue
+                
+            # Create signature from first 4 bytes
+            signature = msg[:4].hex()
+            
+            # Check if this is a new or changed packet
+            if signature not in self._previous_mqtt_values or self._previous_mqtt_values[signature] != msg:
+                hex_msg = ' '.join([f"{b:02x}" for b in msg])
+                _LOGGER.info("Converted hex message: %s", hex_msg)
+                
+                # Check if value has changed
+                if signature in self._previous_mqtt_values:
+                    _LOGGER.info("Updated signature %s: %s", signature, ' '.join([f"{b:02x}" for b in msg[4:]]))
+                
+                self._previous_mqtt_values[signature] = msg
+                
+                # Process the packet
+                self._process_packet(msg)
+            # else: packet is duplicate, skip processing
 
     def _process_buffer(self, buffer: bytearray):
         """Process received data buffer using ezville_wallpad.py logic."""
@@ -421,6 +471,9 @@ class EzvilleRS485Client:
         
         _LOGGER.info("Packet Analysis - Device ID: 0x%02X, Num: 0x%02X(%d), Cmd: 0x%02X, Packet: %s", 
                      device_id, device_num, device_num, command, packet.hex())
+        
+        # Handle unknown devices
+        self._handle_unknown_device(packet)
         
         # Check if this is a state packet
         if device_id in STATE_HEADER:
@@ -691,10 +744,15 @@ class EzvilleRS485Client:
                              device_id, command, expected_ack)
         
         # Check for other known command patterns
-        # Device 0x39 (plug) with command 0x01 might be a control response
-        if device_id == 0x39 and command == 0x01:
-            _LOGGER.info("=> Plug control response packet: device_num=0x%02X", device_num)
-            return
+        # Device 0x39 with command patterns
+        if device_id == 0x39:
+            # Check for state pattern (command 0x1F, 0x2F, 0x3F, 0x4F, etc.)
+            if command in [0x1F, 0x2F, 0x3F, 0x4F, 0x5F, 0x6F, 0x7F]:
+                _LOGGER.info("=> Device 0x39 query packet, command=0x%02X", command)
+                return
+            elif command == 0x01:
+                _LOGGER.info("=> Device 0x39 control response packet: device_num=0x%02X", device_num)
+                return
         
         # Device 0x36 (thermostat) with command 0x01
         if device_id == 0x36 and command == 0x01:
@@ -721,6 +779,60 @@ class EzvilleRS485Client:
                        packet.hex(), device_id, device_num, device_num, command,
                        ','.join([f"0x{k:02X}" for k in STATE_HEADER.keys()]),
                        ','.join([f"0x{k:02X}" for k in ACK_HEADER.keys()]))
+    
+    def _handle_unknown_device(self, packet: bytes):
+        """Handle unknown devices and create entries for them."""
+        if len(packet) < 4:
+            return
+        
+        device_id = packet[1]
+        device_num = packet[2]
+        command = packet[3]
+        
+        # Skip known device types
+        if device_id in STATE_HEADER or device_id in ACK_HEADER:
+            return
+        
+        # Skip some common control packets
+        if command == 0x01 and device_id in [0x0E, 0x32, 0x36, 0x39, 0x60]:
+            return
+        
+        # Create unknown device key
+        device_key = f"unknown_{device_id:02x}"
+        device_type = "unknown"
+        
+        # Extract state data
+        state = {
+            "device_id": f"0x{device_id:02X}",
+            "device_num": device_num,
+            "command": f"0x{command:02X}",
+            "data": packet.hex()
+        }
+        
+        # Check if this is a state update packet (usually with command >= 0x80)
+        if command >= 0x80 and len(packet) > 4:
+            state["raw_data"] = ' '.join([f"{b:02x}" for b in packet[4:-2]])
+        
+        # Check if new device
+        if device_key not in self._discovered_devices:
+            self._discovered_devices.add(device_key)
+            _LOGGER.info("=> NEW UNKNOWN DEVICE discovered: %s (ID: 0x%02X)", device_key, device_id)
+            
+            # Call discovery callbacks
+            for callback in self._device_discovery_callbacks:
+                try:
+                    callback(device_type, f"{device_id:02x}")
+                except Exception as err:
+                    _LOGGER.error("Error in discovery callback: %s", err)
+        
+        # Update state
+        self._device_states[device_key] = state
+        
+        # Call callback if registered
+        if "unknown" in self._callbacks:
+            self._callbacks["unknown"](device_type, f"{device_id:02x}", state)
+        
+        _LOGGER.debug("=> Unknown device %s updated with state: %s", device_key, state)
 
     def _parse_state(self, device_type: str, packet: bytes) -> Optional[Dict[str, Any]]:
         """Parse state packet based on device type."""
