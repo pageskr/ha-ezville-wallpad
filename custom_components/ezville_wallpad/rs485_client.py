@@ -402,7 +402,9 @@ class EzvilleRS485Client:
                      add, expected_add, "OK" if add_ok else "FAIL")
         
         if not checksum_ok or not add_ok:
-            _LOGGER.warning("Checksum verification failed for packet: %s", packet.hex())
+            _LOGGER.warning("Checksum fail: %s | Checksum: calc=0x%02X exp=0x%02X %s | ADD: calc=0x%02X exp=0x%02X %s",
+                           packet.hex(), checksum, expected_checksum, "OK" if checksum_ok else "FAIL",
+                           add, expected_add, "OK" if add_ok else "FAIL")
         
         # Both checksum and add must match
         return checksum_ok and add_ok
@@ -410,15 +412,15 @@ class EzvilleRS485Client:
     def _process_packet(self, packet: bytes):
         """Process a received packet with detailed logging."""
         if len(packet) < 4:
-            _LOGGER.warning("Invalid packet length: %d", len(packet))
+            _LOGGER.warning("Invalid packet length: %d bytes - %s", len(packet), packet.hex())
             return
         
         device_id = packet[1]
         device_num = packet[2]
         command = packet[3]
         
-        _LOGGER.info("Packet Analysis - Device ID: 0x%02X, Num: 0x%02X(%d), Cmd: 0x%02X", 
-                     device_id, device_num, device_num, command)
+        _LOGGER.info("Packet Analysis - Device ID: 0x%02X, Num: 0x%02X(%d), Cmd: 0x%02X, Packet: %s", 
+                     device_id, device_num, device_num, command, packet.hex())
         
         # Check if this is a state packet
         if device_id in STATE_HEADER:
@@ -475,28 +477,36 @@ class EzvilleRS485Client:
                         rm_id = device_num & 0x0F
                         _LOGGER.info("=> Plug state: Group %d, Room %d", grp_id, rm_id)
                         
-                        if len(packet) > 4:
-                            plug_count = packet[4] // 3  # 3 bytes per plug
-                            _LOGGER.info("=> Plug count in room: %d", plug_count)
+                        if len(packet) > 5:
+                            data_length = packet[4]
+                            plug_count = data_length // 3  # 3 bytes per plug
+                            _LOGGER.info("=> Data length: %d, Plug count: %d", data_length, plug_count)
                             
                             # Process each plug
                             for plug_num in range(1, min(plug_count + 1, 3)):  # Max 2 plugs
-                                base_idx = plug_num * 3 + 3
+                                base_idx = 5 + (plug_num - 1) * 3  # Start from byte 5
                                 if len(packet) > base_idx + 2:
-                                    device_key = f"{device_type}_{grp_id}_{plug_num}"
-                                    power_state = (packet[base_idx] & 0x10) != 0
-                                    # Power usage calculation
-                                    power_high = (packet[base_idx] & 0x0F) | (packet[base_idx + 1] << 4)
-                                    power_low = packet[base_idx + 2] >> 4
-                                    power_decimal = packet[base_idx + 2] & 0x0F
+                                    # Use room ID for device key, not group ID
+                                    device_key = f"{device_type}_{rm_id}_{plug_num}"
+                                    
+                                    # Parse plug data
+                                    byte1 = packet[base_idx]
+                                    byte2 = packet[base_idx + 1]
+                                    byte3 = packet[base_idx + 2]
+                                    
+                                    power_state = (byte1 & 0x10) != 0
+                                    # Power usage calculation - need to verify this formula
+                                    power_high = (byte1 & 0x0F) | (byte2 << 4)
+                                    power_decimal = byte3 & 0x0F
                                     power_usage = float(f"{power_high}.{power_decimal}")
                                     
                                     individual_state = {
                                         "power": power_state,
                                         "power_usage": power_usage
                                     }
-                                    _LOGGER.info("=> Plug %s state: %s, Power: %.1fW", 
-                                               device_key, "ON" if power_state else "OFF", power_usage)
+                                    _LOGGER.info("=> Plug %s state: %s, Power: %.1fW (bytes: %02X %02X %02X)", 
+                                               device_key, "ON" if power_state else "OFF", power_usage,
+                                               byte1, byte2, byte3)
                                     
                                     # Check if new device
                                     if device_key not in self._discovered_devices:
@@ -506,7 +516,7 @@ class EzvilleRS485Client:
                                         # Call discovery callbacks
                                         for callback in self._device_discovery_callbacks:
                                             try:
-                                                callback(device_type, f"{grp_id}_{plug_num}")
+                                                callback(device_type, f"{rm_id}_{plug_num}")
                                             except Exception as err:
                                                 _LOGGER.error("Error in discovery callback: %s", err)
                                     
@@ -515,7 +525,7 @@ class EzvilleRS485Client:
                                     
                                     # Call callback
                                     if device_type in self._callbacks:
-                                        self._callbacks[device_type](device_type, f"{grp_id}_{plug_num}", 
+                                        self._callbacks[device_type](device_type, f"{rm_id}_{plug_num}", 
                                                                    individual_state)
                     
                     elif device_type == "thermostat":
@@ -592,6 +602,9 @@ class EzvilleRS485Client:
                             self._callbacks[device_type](device_type, device_num, state_data)
                 
                 return
+            else:
+                _LOGGER.debug("=> Device 0x%02X is state device but command 0x%02X != expected 0x%02X",
+                             device_id, command, expected_cmd)
         
         # Check for ACK packets
         if device_id in ACK_HEADER:
@@ -603,16 +616,22 @@ class EzvilleRS485Client:
                 _LOGGER.debug("=> Device 0x%02X in ACK_HEADER but command 0x%02X != expected 0x%02X",
                              device_id, command, expected_ack)
         
+        # Check for other known command patterns
+        # Device 0x39 (plug) with command 0x01 might be a control response
+        if device_id == 0x39 and command == 0x01:
+            _LOGGER.info("=> Plug control response packet: device_num=0x%02X", device_num)
+            return
+        
+        # Device 0x60 (unknown) with command 0x01
+        if device_id == 0x60 and command == 0x01:
+            _LOGGER.info("=> Unknown device 0x60 control packet: device_num=0x%02X", device_num)
+            return
+        
         # Unknown packet - log detailed info
-        _LOGGER.warning("=> Unknown packet type:")
-        _LOGGER.warning("   Packet: %s", packet.hex())
-        _LOGGER.warning("   Device ID: 0x%02X", device_id)
-        _LOGGER.warning("   Device Num: 0x%02X (dec: %d)", device_num, device_num)
-        _LOGGER.warning("   Command: 0x%02X", command)
-        _LOGGER.warning("   Known state headers: %s", 
-                       ', '.join([f"0x{k:02X}" for k in STATE_HEADER.keys()]))
-        _LOGGER.warning("   Known ACK headers: %s", 
-                       ', '.join([f"0x{k:02X}" for k in ACK_HEADER.keys()]))
+        _LOGGER.warning("Unknown packet: %s | Device: 0x%02X | Num: 0x%02X (dec: %d) | Cmd: 0x%02X | State headers: %s | ACK headers: %s",
+                       packet.hex(), device_id, device_num, device_num, command,
+                       ','.join([f"0x{k:02X}" for k in STATE_HEADER.keys()]),
+                       ','.join([f"0x{k:02X}" for k in ACK_HEADER.keys()]))
 
     def _parse_state(self, device_type: str, packet: bytes) -> Optional[Dict[str, Any]]:
         """Parse state packet based on device type."""
@@ -653,8 +672,15 @@ class EzvilleRS485Client:
         
         elif device_type == "doorbell":
             if len(packet) > 4:
-                state["ring"] = packet[4] == 0x01
-                _LOGGER.debug("Doorbell state parsed: %s", state)
+                # Check both ring state and ringing state
+                ring_state = packet[4] == 0x01
+                ringing_state = False
+                if len(packet) > 5:
+                    ringing_state = packet[5] == 0x01
+                
+                state["ring"] = ring_state
+                state["ringing"] = ring_state or ringing_state  # For binary sensor
+                _LOGGER.debug("Doorbell state parsed: ring=%s, ringing=%s", ring_state, ringing_state)
         
         # Note: light, plug, thermostat are handled in _process_packet directly
         
@@ -921,46 +947,23 @@ class EzvilleMqtt:
             # Parse the message payload
             if msg.topic == self.topic_recv:
                 _LOGGER.debug("MQTT MSG on %s: %d bytes", msg.topic, len(msg.payload))
-                _LOGGER.debug("MQTT RAW: %s", msg.payload[:200])  # First 200 bytes
                 
                 # Assume the payload is hex string or bytes
                 if isinstance(msg.payload, bytes):
                     # Try to decode as hex string first
                     try:
                         hex_str = msg.payload.decode('utf-8')
-                        # Remove any spaces or commas
+                        # Remove any spaces, commas, newlines
                         hex_str = hex_str.replace(' ', '').replace(',', '').replace('\n', '').replace('\r', '')
                         data = bytes.fromhex(hex_str)
-                        _LOGGER.debug("MQTT Decoded hex string to %d bytes", len(data))
-                        _LOGGER.debug("MQTT Hex data: %s", data.hex())
+                        _LOGGER.debug("MQTT Decoded hex string to %d bytes: %s", len(data), data.hex())
                     except:
                         # If not hex string, use raw bytes
                         data = msg.payload
                         _LOGGER.debug("MQTT Using raw bytes: %d bytes", len(data))
                     
-                    # Split data by F7 markers and process each packet separately
-                    if b'\xf7' in data:
-                        packet_count = data.count(b'\xf7')
-                        _LOGGER.debug("MQTT Found %d F7 markers in data", packet_count)
-                        
-                        # Split by F7 and process each packet
-                        temp_buffer = bytearray()
-                        for i, byte in enumerate(data):
-                            if byte == 0xF7 and len(temp_buffer) > 0:
-                                # Process previous packet
-                                self._recv_buf.extend(temp_buffer)
-                                _LOGGER.debug("MQTT Processing packet from split: %s", temp_buffer.hex())
-                                temp_buffer = bytearray([0xF7])
-                            else:
-                                temp_buffer.append(byte)
-                        
-                        # Add remaining data
-                        if temp_buffer:
-                            self._recv_buf.extend(temp_buffer)
-                            _LOGGER.debug("MQTT Processing final packet: %s", temp_buffer.hex())
-                    else:
-                        self._recv_buf.extend(data)
-                    
+                    # Add data to buffer
+                    self._recv_buf.extend(data)
                     _LOGGER.debug("MQTT Buffer now has %d bytes", len(self._recv_buf))
         except Exception as err:
             _LOGGER.error("Error processing MQTT message: %s", err)
