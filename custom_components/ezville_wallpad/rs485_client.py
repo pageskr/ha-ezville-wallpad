@@ -474,15 +474,15 @@ class EzvilleRS485Client:
         # Log packet analysis based on device type
         if device_id == 0x0E:  # Light device
             room_id = device_num & 0x0F
-            _LOGGER.info("Packet Analysis - Device ID: 0x%02X, Room: 0x%02X(%d), Cmd: 0x%02X, Packet: %s", 
+            _LOGGER.info("Packet Analysis - Device ID: 0x%02X(Light), Room: 0x%02X(%d), Cmd: 0x%02X, Packet: %s", 
                          device_id, room_id, room_id, command, packet.hex())
         elif device_id == 0x39:  # Plug device
             room_id = device_num >> 4
-            _LOGGER.info("Packet Analysis - Device ID: 0x%02X, Room: 0x%02X(%d), Cmd: 0x%02X, Packet: %s", 
+            _LOGGER.info("Packet Analysis - Device ID: 0x%02X(Plug), Room: 0x%02X(%d), Cmd: 0x%02X, Packet: %s", 
                          device_id, room_id, room_id, command, packet.hex())
         elif device_id == 0x36:  # Thermostat device
             room_id = device_num >> 4
-            _LOGGER.info("Packet Analysis - Device ID: 0x%02X, Room: 0x%02X(%d), Cmd: 0x%02X, Packet: %s", 
+            _LOGGER.info("Packet Analysis - Device ID: 0x%02X(Thermostat), Room: 0x%02X(%d), Cmd: 0x%02X, Packet: %s", 
                          device_id, room_id, room_id, command, packet.hex())
         else:
             _LOGGER.info("Packet Analysis - Device ID: 0x%02X, Num: 0x%02X(%d), Cmd: 0x%02X, Packet: %s", 
