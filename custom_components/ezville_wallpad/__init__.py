@@ -33,7 +33,7 @@ from .const import (
 )
 from .coordinator import EzvilleWallpadCoordinator
 
-_LOGGER = logging.getLogger(__name__)
+_LOGGER = logging.getLogger("custom_components.ezville_wallpad")
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:

@@ -21,7 +21,8 @@ from .const import (
     DEFAULT_MQTT_QOS,
 )
 
-_LOGGER = logging.getLogger(__name__)
+# Configure logger name to be shorter
+_LOGGER = logging.getLogger("custom_components.ezville_wallpad.rs485")
 
 
 class EzvilleRS485Client:
@@ -73,6 +74,7 @@ class EzvilleRS485Client:
         self._discovered_devices = set()
         self._device_discovery_callbacks = []
         self._previous_mqtt_values = {}  # For MQTT deduplication
+        self._processed_packets = set()  # Track processed packets to avoid duplicates
         
         # ACK mapping
         self._ack_map = defaultdict(lambda: defaultdict(dict))
@@ -124,7 +126,7 @@ class EzvilleRS485Client:
             if self.dump_time > 0:
                 await self._dump_packets()
             
-            self._thread = threading.Thread(target=self._communication_loop, daemon=True)
+            self._thread = threading.Thread(target=self._message_loop, daemon=True)
             self._thread.start()
             
             _LOGGER.info("Successfully connected to Ezville Wallpad via %s", self.connection_type)
@@ -236,10 +238,13 @@ class EzvilleRS485Client:
             _LOGGER.info("Queued command for %s %s: %s (payload: %s)", 
                         device, idn, packet.hex(), payload)
 
-    def _communication_loop(self):
-        """Main communication loop."""
-        _LOGGER.debug("Starting communication loop")
+    def _message_loop(self):
+        """Main message processing loop."""
+        _LOGGER.debug("Starting message loop")
         buffer = bytearray()
+        
+        # Set custom thread name for cleaner logs
+        threading.current_thread().name = "message_loop"
         
         while self._running:
             try:
@@ -268,7 +273,7 @@ class EzvilleRS485Client:
                 time.sleep(0.01)
                 
             except Exception as err:
-                _LOGGER.error("Error in communication loop: %s", err)
+                _LOGGER.error("Error in message loop: %s", err)
                 time.sleep(1)
     
     def _process_mqtt_data(self, data: bytes):
@@ -293,11 +298,27 @@ class EzvilleRS485Client:
         
         _LOGGER.debug("MQTT: Received %d packets from data", len(messages))
         
-        # Process each message
+        # Remove duplicate packets before processing
+        unique_messages = []
+        seen_packets = set()
+        
         for msg in messages:
             if len(msg) < 4:
                 continue
-                
+            
+            # Use full packet as key for deduplication
+            packet_key = msg.hex()
+            if packet_key not in seen_packets:
+                seen_packets.add(packet_key)
+                unique_messages.append(msg)
+            else:
+                _LOGGER.debug("MQTT: Skipping duplicate packet: %s", packet_key[:8])
+        
+        _LOGGER.debug("MQTT: Processing %d unique packets (removed %d duplicates)", 
+                     len(unique_messages), len(messages) - len(unique_messages))
+        
+        # Process each unique message
+        for msg in unique_messages:
             # Create signature from first 4 bytes
             signature = msg[:4].hex()
             
@@ -519,8 +540,16 @@ class EzvilleRS485Client:
                                     light_state = (packet[6 + light_num - 1] & 1) == 1
                                     
                                     individual_state = {"power": light_state}
-                                    _LOGGER.info("=> Light Room: %d, Num: %d, state: %s (key: %s)", 
-                                               room_id, light_num, "ON" if light_state else "OFF", device_key)
+                                    
+                                    # Check if state changed
+                                    old_state = self._device_states.get(device_key, {}).get("power")
+                                    if old_state != light_state:
+                                        _LOGGER.info("=> Light Room: %d, Num: %d, state: %s → %s (key: %s, updated)", 
+                                                   room_id, light_num, "ON" if old_state else "OFF" if old_state is not None else "UNKNOWN",
+                                                   "ON" if light_state else "OFF", device_key)
+                                    else:
+                                        _LOGGER.info("=> Light Room: %d, Num: %d, state: %s (key: %s)", 
+                                                   room_id, light_num, "ON" if light_state else "OFF", device_key)
                                     
                                     # Check if new device
                                     if device_key not in self._discovered_devices:
@@ -579,9 +608,24 @@ class EzvilleRS485Client:
                                         "power": power_state,
                                         "power_usage": power_usage
                                     }
-                                    _LOGGER.info("=> Plug Room: %d, Num: %d, state: %s, Power: %sW (key: %s, bytes: %02X %02X %02X)", 
-                                               room_id, plug_num, "ON" if power_state else "OFF", power_usage_str, device_key,
-                                               packet[base_idx], packet[base_idx + 1], packet[base_idx + 2])
+                                    
+                                    # Check if state changed
+                                    old_state = self._device_states.get(device_key, {})
+                                    old_power = old_state.get("power")
+                                    old_usage = old_state.get("power_usage")
+                                    
+                                    if old_power != power_state or old_usage != power_usage:
+                                        _LOGGER.info("=> Plug Room: %d, Num: %d, state: %s → %s, Power: %sW → %sW (key: %s, bytes: %02X %02X %02X, updated)", 
+                                                   room_id, plug_num, 
+                                                   "ON" if old_power else "OFF" if old_power is not None else "UNKNOWN",
+                                                   "ON" if power_state else "OFF",
+                                                   f"{old_usage:.1f}" if old_usage is not None else "UNKNOWN",
+                                                   power_usage_str, device_key,
+                                                   packet[base_idx], packet[base_idx + 1], packet[base_idx + 2])
+                                    else:
+                                        _LOGGER.info("=> Plug Room: %d, Num: %d, state: %s, Power: %sW (key: %s, bytes: %02X %02X %02X)", 
+                                                   room_id, plug_num, "ON" if power_state else "OFF", power_usage_str, device_key,
+                                                   packet[base_idx], packet[base_idx + 1], packet[base_idx + 2])
                                     
                                     # Check if new device
                                     if device_key not in self._discovered_devices:
@@ -1111,6 +1155,12 @@ class EzvilleMqtt:
         self._recv_buf = bytearray()
         self._connected = False
         self._connect_event = threading.Event()
+        
+        # Configure MQTT logger to be shorter
+        logging.getLogger("paho.mqtt").setLevel(logging.INFO)
+        # Custom formatter for paho-mqtt logs
+        mqtt_logger = logging.getLogger("paho.mqtt.client")
+        mqtt_logger.name = "paho-mqtt"
     
     async def async_connect(self):
         """Connect to MQTT broker asynchronously."""

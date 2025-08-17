@@ -19,7 +19,7 @@ from homeassistant.util.percentage import (
 from .const import DOMAIN, MANUFACTURER, MODEL
 from .coordinator import EzvilleWallpadCoordinator
 
-_LOGGER = logging.getLogger(__name__)
+_LOGGER = logging.getLogger("custom_components.ezville_wallpad.fan")
 
 SPEED_RANGE = (1, 3)  # 3 speed levels
 

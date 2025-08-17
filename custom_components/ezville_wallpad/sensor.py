@@ -16,7 +16,7 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from .const import DOMAIN
 from .coordinator import EzvilleWallpadCoordinator
 
-_LOGGER = logging.getLogger(__name__)
+_LOGGER = logging.getLogger("custom_components.ezville_wallpad.sensor")
 
 
 async def async_setup_entry(
@@ -60,7 +60,7 @@ async def async_setup_entry(
     
     # Add existing devices
     for device_key, device_info in coordinator.devices.items():
-        if device_info["device_type"] in ["plug", "energy"]:
+        if device_info["device_type"] in ["plug", "energy", "unknown"]:
             async_add_sensors(device_key, device_info)
     
     # Register callback for new devices
@@ -68,7 +68,7 @@ async def async_setup_entry(
     def device_added():
         """Handle new device added."""
         for device_key, device_info in coordinator.devices.items():
-            if device_info["device_type"] in ["plug", "energy"]:
+            if device_info["device_type"] in ["plug", "energy", "unknown"]:
                 async_add_sensors(device_key, device_info)
     
     # Listen for coordinator updates

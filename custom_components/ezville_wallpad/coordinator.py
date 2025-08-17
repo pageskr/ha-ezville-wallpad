@@ -19,7 +19,7 @@ from .const import (
 )
 from .rs485_client import EzvilleRS485Client
 
-_LOGGER = logging.getLogger(__name__)
+_LOGGER = logging.getLogger("custom_components.ezville_wallpad.coordinator")
 
 
 class EzvilleWallpadCoordinator(DataUpdateCoordinator):

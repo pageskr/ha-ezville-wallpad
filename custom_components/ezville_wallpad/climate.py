@@ -20,7 +20,7 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from .const import DOMAIN, MANUFACTURER, MODEL
 from .coordinator import EzvilleWallpadCoordinator
 
-_LOGGER = logging.getLogger(__name__)
+_LOGGER = logging.getLogger("custom_components.ezville_wallpad.climate")
 
 
 async def async_setup_entry(

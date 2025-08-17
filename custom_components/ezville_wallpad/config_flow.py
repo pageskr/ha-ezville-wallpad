@@ -38,7 +38,7 @@ from .const import (
 )
 from .rs485_client import EzvilleRS485Client
 
-_LOGGER = logging.getLogger(__name__)
+_LOGGER = logging.getLogger("custom_components.ezville_wallpad.config_flow")
 
 
 class EzvilleWallpadConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
