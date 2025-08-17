@@ -471,8 +471,22 @@ class EzvilleRS485Client:
         device_num = packet[2]
         command = packet[3]
         
-        _LOGGER.info("Packet Analysis - Device ID: 0x%02X, Num: 0x%02X(%d), Cmd: 0x%02X, Packet: %s", 
-                     device_id, device_num, device_num, command, packet.hex())
+        # Log packet analysis based on device type
+        if device_id == 0x0E:  # Light device
+            room_id = device_num & 0x0F
+            _LOGGER.info("Packet Analysis - Device ID: 0x%02X, Room: 0x%02X(%d), Cmd: 0x%02X, Packet: %s", 
+                         device_id, room_id, room_id, command, packet.hex())
+        elif device_id == 0x39:  # Plug device
+            room_id = device_num >> 4
+            _LOGGER.info("Packet Analysis - Device ID: 0x%02X, Room: 0x%02X(%d), Cmd: 0x%02X, Packet: %s", 
+                         device_id, room_id, room_id, command, packet.hex())
+        elif device_id == 0x36:  # Thermostat device
+            room_id = device_num >> 4
+            _LOGGER.info("Packet Analysis - Device ID: 0x%02X, Room: 0x%02X(%d), Cmd: 0x%02X, Packet: %s", 
+                         device_id, room_id, room_id, command, packet.hex())
+        else:
+            _LOGGER.info("Packet Analysis - Device ID: 0x%02X, Num: 0x%02X(%d), Cmd: 0x%02X, Packet: %s", 
+                         device_id, device_num, device_num, command, packet.hex())
         
         # Handle unknown devices
         self._handle_unknown_device(packet)
@@ -505,8 +519,8 @@ class EzvilleRS485Client:
                                     light_state = (packet[6 + light_num - 1] & 1) == 1
                                     
                                     individual_state = {"power": light_state}
-                                    _LOGGER.info("=> Light %s state: %s", device_key, 
-                                               "ON" if light_state else "OFF")
+                                    _LOGGER.info("=> Light Room: %d, Num: %d, state: %s (key: %s)", 
+                                               room_id, light_num, "ON" if light_state else "OFF", device_key)
                                     
                                     # Check if new device
                                     if device_key not in self._discovered_devices:
@@ -565,8 +579,8 @@ class EzvilleRS485Client:
                                         "power": power_state,
                                         "power_usage": power_usage
                                     }
-                                    _LOGGER.info("=> Plug %s state: %s, Power: %sW (bytes: %02X %02X %02X)", 
-                                               device_key, "ON" if power_state else "OFF", power_usage_str,
+                                    _LOGGER.info("=> Plug Room: %d, Num: %d, state: %s, Power: %sW (key: %s, bytes: %02X %02X %02X)", 
+                                               room_id, plug_num, "ON" if power_state else "OFF", power_usage_str, device_key,
                                                packet[base_idx], packet[base_idx + 1], packet[base_idx + 2])
                                     
                                     # Check if new device
@@ -629,7 +643,9 @@ class EzvilleRS485Client:
                                 for i in range(room_count):
                                     idx = temp_start + i * 2
                                     if idx + 1 < len(packet):
-                                        device_key = f"{device_type}_{i+1}"
+                                        # Thermostat room number is from the base room_id + index
+                                        thermostat_room = room_id + i
+                                        device_key = f"{device_type}_{thermostat_room}"
                                         # Swap target/current based on actual data pattern
                                         target_temp = packet[idx]
                                         current_temp = packet[idx + 1]
@@ -645,8 +661,8 @@ class EzvilleRS485Client:
                                             "target_temperature": target_temp
                                         }
                                         
-                                        _LOGGER.info("=> Thermostat %s - Current: %d°C, Target: %d°C (idx=%d)",
-                                                   device_key, current_temp, target_temp, idx)
+                                        _LOGGER.info("=> Thermostat Room: %d - Current: %d°C, Target: %d°C (key: %s, idx=%d)",
+                                                   thermostat_room, current_temp, target_temp, device_key, idx)
                                         
                                         # Device discovery and callback handling
                                         if device_key not in self._discovered_devices:
@@ -655,14 +671,14 @@ class EzvilleRS485Client:
                                             
                                             for callback in self._device_discovery_callbacks:
                                                 try:
-                                                    callback(device_type, i+1)
+                                                    callback(device_type, thermostat_room)
                                                 except Exception as err:
                                                     _LOGGER.error("Error in discovery callback: %s", err)
                                         
                                         self._device_states[device_key] = individual_state
                                         
                                         if device_type in self._callbacks:
-                                            self._callbacks[device_type](device_type, i+1, individual_state)
+                                            self._callbacks[device_type](device_type, thermostat_room, individual_state)
                                         
                             else:
                                 # Standard thermostat packet format
@@ -670,19 +686,20 @@ class EzvilleRS485Client:
                                 _LOGGER.info("=> Standard format, calculated room count: %d", room_count)
                                 
                                 # Process each thermostat
-                                for thermo_id in range(1, min(room_count + 1, 16)):
-                                    device_key = f"{device_type}_{thermo_id}"
+                                for thermo_idx in range(0, min(room_count, 15)):
+                                    thermostat_room = room_id + thermo_idx  # Room number based on base room_id
+                                    device_key = f"{device_type}_{thermostat_room}"
                                     
                                     # Check if we have enough data
-                                    if len(packet) < 8 + thermo_id * 2 + 1:
-                                        _LOGGER.warning("Not enough data for thermostat %d", thermo_id)
+                                    if len(packet) < 8 + thermo_idx * 2 + 3:
+                                        _LOGGER.warning("Not enough data for thermostat room %d", thermostat_room)
                                         continue
                                     
                                     # Extract state from standard format
-                                    mode_on = ((packet[6] & 0x1F) >> (thermo_id - 1)) & 1 if thermo_id <= 5 and len(packet) > 6 else False
-                                    away_on = ((packet[7] & 0x1F) >> (thermo_id - 1)) & 1 if thermo_id <= 5 and len(packet) > 7 else False
-                                    target_temp = packet[8 + thermo_id * 2] if len(packet) > 8 + thermo_id * 2 else 0
-                                    current_temp = packet[9 + thermo_id * 2] if len(packet) > 9 + thermo_id * 2 else 0
+                                    mode_on = ((packet[6] & 0x1F) >> thermo_idx) & 1 if thermo_idx < 5 and len(packet) > 6 else False
+                                    away_on = ((packet[7] & 0x1F) >> thermo_idx) & 1 if thermo_idx < 5 and len(packet) > 7 else False
+                                    target_temp = packet[8 + thermo_idx * 2] if len(packet) > 8 + thermo_idx * 2 else 0
+                                    current_temp = packet[9 + thermo_idx * 2] if len(packet) > 9 + thermo_idx * 2 else 0
                                     
                                     individual_state = {
                                         "mode": 1 if mode_on else 0,
@@ -691,9 +708,9 @@ class EzvilleRS485Client:
                                         "target_temperature": target_temp
                                     }
                                     
-                                    _LOGGER.info("=> Thermostat %s - Mode: %s, Away: %s, Current: %d°C, Target: %d°C",
-                                               device_key, "Heat" if mode_on else "Off", "On" if away_on else "Off",
-                                               current_temp, target_temp)
+                                    _LOGGER.info("=> Thermostat Room: %d - Mode: %s, Away: %s, Current: %d°C, Target: %d°C (key: %s)",
+                                               thermostat_room, "Heat" if mode_on else "Off", "On" if away_on else "Off",
+                                               current_temp, target_temp, device_key)
                                     
                                     # Device discovery and callback handling
                                     if device_key not in self._discovered_devices:
@@ -702,14 +719,14 @@ class EzvilleRS485Client:
                                         
                                         for callback in self._device_discovery_callbacks:
                                             try:
-                                                callback(device_type, thermo_id)
+                                                callback(device_type, thermostat_room)
                                             except Exception as err:
                                                 _LOGGER.error("Error in discovery callback: %s", err)
                                     
                                     self._device_states[device_key] = individual_state
                                     
                                     if device_type in self._callbacks:
-                                        self._callbacks[device_type](device_type, thermo_id, individual_state)
+                                        self._callbacks[device_type](device_type, thermostat_room, individual_state)
                     
                     else:
                         # Other device types (fan, gas, energy, elevator, doorbell)

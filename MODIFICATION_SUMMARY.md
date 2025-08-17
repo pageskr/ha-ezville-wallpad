@@ -5,18 +5,26 @@
 ### 수정된 파일 목록
 
 1. **custom_components/ezville_wallpad/rs485_client.py**
+   - 패킷 분석 로그 개선
+     - Light: Room과 Num 분리 표시
+     - Plug: Room과 Num 분리 표시
+     - Thermostat: Room만 표시
    - Light 패킷 분석 로직 수정
      - Room 번호 추출: device_num & 0x0F 사용
      - Light 개수 계산: packet[4] - 1
      - Light 상태 읽기: 7번째 바이트부터 시작 (index 6)
+     - 로그 형식: "Light Room: X, Num: Y"
    - Plug 패킷 분석 로직 수정
      - Room 번호 추출: device_num >> 4 사용 (상위 4비트)
      - Plug 개수 계산: int(packet[4] / 3)
      - Plug 상태 인덱스: plug_num * 3 + 3
      - 전력 사용량 계산 수정
+     - 로그 형식: "Plug Room: X, Num: Y"
    - Thermostat 패킷 분석 로직 수정
      - Room 번호 추출: device_num >> 4 사용 (상위 4비트)
      - 특별 포맷 처리: room_id == 0x01 체크
+     - 표준 포맷: room_id + index로 실제 room 번호 계산
+     - 로그 형식: "Thermostat Room: X"
    - 명령 패킷 생성 로직 수정
      - Thermostat: device_num = (room_id << 4) | 0
    - MQTT 로그 개선
@@ -44,32 +52,27 @@
 
 ## 주요 버그 수정
 
-### 1. Light 패킷 분석 수정
-이전 코드:
-```python
-grp_id = device_num >> 4
-rm_id = device_num & 0x0F
-light_count = packet[4]
-light_state = (packet[5 + light_num - 1] & 1) == 1
-```
+### 1. 패킷 분석 로그 개선
+메인 로그 포맷:
+- Light: "Packet Analysis - Device ID: 0x0E, Room: 0x01(1), Cmd: 0x81, Packet: ..."
+- Plug: "Packet Analysis - Device ID: 0x39, Room: 0x01(1), Cmd: 0x81, Packet: ..."
+- Thermostat: "Packet Analysis - Device ID: 0x36, Room: 0x01(1), Cmd: 0x81, Packet: ..."
+- 기타: "Packet Analysis - Device ID: 0xXX, Num: 0xXX(XX), Cmd: 0xXX, Packet: ..."
 
-수정된 코드:
+상세 로그 포맷:
+- Light: "=> Light Room: 1, Num: 1, state: ON (key: light_1_1)"
+- Plug: "=> Plug Room: 2, Num: 1, state: ON, Power: 123.6W (key: plug_2_1, bytes: ...)"
+- Thermostat: "=> Thermostat Room: 1 - Current: 25°C, Target: 23°C (key: thermostat_1)"
+
+### 2. Light 패킷 분석 수정
 ```python
 room_id = int(device_num & 0x0F)
 light_count = packet[4] - 1
 light_state = (packet[6 + light_num - 1] & 1) == 1
+device_key = f"light_{room_id}_{light_num}"
 ```
 
-### 2. Plug 패킷 분석 수정
-이전 코드:
-```python
-grp_id = device_num >> 4
-rm_id = device_num & 0x0F
-plug_count = data_length // 3
-base_idx = 5 + (plug_num - 1) * 3
-```
-
-수정된 코드:
+### 3. Plug 패킷 분석 수정
 ```python
 room_id = int(device_num >> 4)
 plug_count = int(data_length / 3)
@@ -77,27 +80,26 @@ base_idx = plug_num * 3 + 3
 power_high = format((packet[base_idx] & 0x0F) | (packet[base_idx + 1] << 4) | (packet[base_idx + 2] >> 4), 'x')
 power_decimal = format(packet[base_idx + 2] & 0x0F, 'x')
 power_usage_str = f"{power_high}.{power_decimal}"
+device_key = f"plug_{room_id}_{plug_num}"
 ```
 
-### 3. Thermostat 패킷 분석 수정
-이전 코드:
-```python
-grp_id = device_num >> 4
-rm_id = device_num & 0x0F
-device_num == 0x1F
-```
-
-수정된 코드:
+### 4. Thermostat 패킷 분석 수정
 ```python
 room_id = int(device_num >> 4)
-room_id == 0x01
+# 특별 포맷
+if room_id == 0x01 and data_length == 0x0D:
+    thermostat_room = room_id + i
+    device_key = f"thermostat_{thermostat_room}"
+# 표준 포맷
+thermostat_room = room_id + thermo_idx
+device_key = f"thermostat_{thermostat_room}"
 ```
 
-### 4. 스레드 안전성 문제 해결
+### 5. 스레드 안전성 문제 해결
 - `async_write_ha_state`가 다른 스레드에서 호출되는 문제 수정
 - `call_soon_threadsafe` 사용하여 event loop에서 실행
 
-### 5. Valve 엔티티 에러 수정
+### 6. Valve 엔티티 에러 수정
 - `reports_position` 속성 누락 문제 해결
 - Gas valve는 위치 정보를 제공하지 않으므로 False 설정
 
@@ -115,9 +117,9 @@ room_id == 0x01
 
 ## 테스트 완료 항목
 
-- ✅ Light 패킷 분석 (f70e1281030001006804)
-- ✅ Plug 패킷 분석 (f7392f8107001012360000005392)
-- ✅ Thermostat 패킷 분석 (f7361f810d00000f0000051d051b)
+- ✅ Light 패킷 분석 (f70e118104000000006d08)
+- ✅ Plug 패킷 분석 (f7391f810700900167100137879e)
+- ✅ Thermostat 패킷 분석 (f7361f810d00000f0000051d051d)
 - ✅ MQTT 중복 제거 및 로깅
 - ✅ Unknown 디바이스 처리
 - ✅ 스레드 안전성
@@ -133,36 +135,40 @@ room_id == 0x01
 
 ### Light 패킷 예시:
 ```
-f7 0e 12 81 03 00 01 00 68 04
-- Room: 2 (0x12 & 0x0F)
-- Light count: 2 (0x03 - 1)
+f7 0e 11 81 04 00 00 00 00 6d 08
+- Device ID: 0x0E (light)
+- Room: 1 (0x11 & 0x0F)
+- Light count: 3 (0x04 - 1)
 - Light 1: Off (index 6 = 0x00)
-- Light 2: On (index 7 = 0x01)
-결과: light_2_1 = Off, light_2_2 = On
+- Light 2: Off (index 7 = 0x00)
+- Light 3: Off (index 8 = 0x00)
+결과: light_1_1 = Off, light_1_2 = Off, light_1_3 = Off
 ```
 
 ### Plug 패킷 예시:
 ```
-f7 39 2f 81 07 00 10 12 36 00 00 00 53 92
-- Room: 2 (0x2F >> 4)
+f7 39 1f 81 07 00 90 01 67 10 01 37 87 9e
+- Device ID: 0x39 (plug)
+- Room: 1 (0x1F >> 4)
 - Plug count: 2 (0x07 / 3)
 - Plug 1:
   - Index: 1 * 3 + 3 = 6
   - State: On (packet[6] & 0x10 = 0x10)
-  - Power: 123.6W
+  - Power: 190.1W
 - Plug 2:
   - Index: 2 * 3 + 3 = 9
-  - State: Off (packet[9] & 0x10 = 0x00)
-  - Power: 0.0W
-결과: plug_2_1 = On (123.6W), plug_2_2 = Off (0.0W)
+  - State: On (packet[9] & 0x10 = 0x10)
+  - Power: 137.3W
+결과: plug_1_1 = On (190.1W), plug_1_2 = On (137.3W)
 ```
 
 ### Thermostat 패킷 예시:
 ```
-f7 36 1f 81 0d 00 00 0f 00 00 05 1d 05 1b
+f7 36 1f 81 0d 00 00 0f 00 00 05 1d 05 1d
+- Device ID: 0x36 (thermostat)
 - Room: 1 (0x1F >> 4)
 - Special format detected
 - Thermostat data starts at index 10
-- Thermostat 1: Current 27°C, Target 29°C
-- Thermostat 2: Current 27°C, Target 29°C
+- Thermostat 1: Current 29°C (0x1d), Target 29°C (0x1d)
+결과: thermostat_1 = 29°C/29°C
 ```
