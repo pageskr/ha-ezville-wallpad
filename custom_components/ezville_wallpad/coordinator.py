@@ -128,44 +128,54 @@ class EzvilleWallpadCoordinator(DataUpdateCoordinator):
         
         # Create initial devices according to requirements
         if "doorbell" in self.capabilities:
-            device_key = "doorbell_1"
+            device_key = "doorbell"
             self.devices[device_key] = {
                 "device_type": "doorbell",
-                "device_id": 1,
+                "device_id": None,
                 "name": "Doorbell",
                 "state": {"ring": False}
             }
             _LOGGER.debug("Created default doorbell: %s", device_key)
         
         if "elevator" in self.capabilities:
-            device_key = "elevator_1"
+            device_key = "elevator"
             self.devices[device_key] = {
                 "device_type": "elevator",
-                "device_id": 1,
+                "device_id": None,
                 "name": "Elevator",
                 "state": {"status": 0, "floor": 1}
             }
             _LOGGER.debug("Created default elevator: %s", device_key)
         
         if "energy" in self.capabilities:
-            device_key = "energy_0"
+            device_key = "energy"
             self.devices[device_key] = {
                 "device_type": "energy",
-                "device_id": 0,
+                "device_id": None,
                 "name": "Energy Meter",
                 "state": {"power": 0, "usage": 0}
             }
             _LOGGER.debug("Created default energy meter: %s", device_key)
         
         if "gas" in self.capabilities:
-            device_key = "gas_1"
+            device_key = "gas"
             self.devices[device_key] = {
                 "device_type": "gas",
-                "device_id": 1,
+                "device_id": None,
                 "name": "Gas Valve",
                 "state": {"closed": True}
             }
             _LOGGER.debug("Created default gas valve: %s", device_key)
+        
+        if "fan" in self.capabilities:
+            device_key = "fan"
+            self.devices[device_key] = {
+                "device_type": "fan",
+                "device_id": None,
+                "name": "Ventilation Fan",
+                "state": {"power": False, "speed": 0, "mode": "bypass"}
+            }
+            _LOGGER.debug("Created default ventilation fan: %s", device_key)
         
         if "light" in self.capabilities:
             # Create Light 1 with 3 components
@@ -209,18 +219,8 @@ class EzvilleWallpadCoordinator(DataUpdateCoordinator):
                 }
             }
             _LOGGER.debug("Created default thermostat: %s", device_key)
-        
-        if "fan" in self.capabilities:
-            device_key = "fan_1"
-            self.devices[device_key] = {
-                "device_type": "fan",
-                "device_id": 1,
-                "name": "Ventilation Fan",
-                "state": {"power": False, "speed": 0, "mode": "bypass"}
-            }
-            _LOGGER.debug("Created default ventilation fan: %s", device_key)
-        
-        _LOGGER.info("Created %d default devices", len(self.devices))
+            
+            _LOGGER.info("Created %d default devices", len(self.devices))
         
         # Determine which platforms need to be loaded
         self._determine_platforms_to_load()
@@ -260,19 +260,32 @@ class EzvilleWallpadCoordinator(DataUpdateCoordinator):
                          device_type, device_id)
             return
         
-        # Convert device_id to string for consistent key format
-        device_key = f"{device_type}_{device_id}"
+        # Handle different key formats based on device type
+        if device_type in ["light", "plug", "thermostat"]:
+            # Multi-instance devices with room/num or room only
+            device_key = f"{device_type}_{device_id}" if device_id else device_type
+        elif device_type == "unknown":
+            # Unknown devices use signature as key
+            device_key = f"unknown_{device_id}"
+        else:
+            # Single instance devices (fan, gas, energy, elevator, doorbell)
+            device_key = device_type
         
         if device_key not in self.devices:
             _LOGGER.info("Discovered new device: %s", device_key)
             
             # Parse device ID to get display name
-            if isinstance(device_id, str) and "_" in device_id:
+            if device_type in ["light", "plug"] and isinstance(device_id, str) and "_" in device_id:
                 # For light_1_2 format
                 parts = device_id.split("_")
                 display_name = f"{device_type.title()} {parts[0]} {parts[1]}"
-            else:
+            elif device_type == "thermostat" and device_id:
                 display_name = f"{device_type.title()} {device_id}"
+            elif device_type == "unknown":
+                display_name = f"Unknown {device_id}"
+            else:
+                # Single instance devices
+                display_name = device_type.title()
             
             # Create device entry
             self.devices[device_key] = {
@@ -420,20 +433,33 @@ class EzvilleWallpadCoordinator(DataUpdateCoordinator):
         if device_type != "unknown" and device_type not in self.capabilities:
             return
             
-        # Convert device_id to string for consistent key format
-        device_key = f"{device_type}_{device_id}"
+        # Handle different key formats based on device type
+        if device_type in ["light", "plug", "thermostat"]:
+            # Multi-instance devices with room/num or room only
+            device_key = f"{device_type}_{device_id}" if device_id else device_type
+        elif device_type == "unknown":
+            # Unknown devices use signature as key
+            device_key = f"unknown_{device_id}"
+        else:
+            # Single instance devices (fan, gas, energy, elevator, doorbell)
+            device_key = device_type
         
         # Update or create device entry
         if device_key not in self.devices:
             _LOGGER.info("New device detected via state update: %s", device_key)
             
             # Parse device ID to get display name
-            if isinstance(device_id, str) and "_" in device_id:
+            if device_type in ["light", "plug"] and isinstance(device_id, str) and "_" in device_id:
                 # For light_1_2 format
                 parts = device_id.split("_")
                 display_name = f"{device_type.title()} {parts[0]} {parts[1]}"
-            else:
+            elif device_type == "thermostat" and device_id:
                 display_name = f"{device_type.title()} {device_id}"
+            elif device_type == "unknown":
+                display_name = f"Unknown {device_id}"
+            else:
+                # Single instance devices
+                display_name = device_type.title()
             
             self.devices[device_key] = {
                 "device_type": device_type,
@@ -484,12 +510,16 @@ class EzvilleWallpadCoordinator(DataUpdateCoordinator):
     async def send_command(self, device_type: str, device_id: Any, command: str, payload: Any):
         """Send a command to a device."""
         _LOGGER.debug("Sending command %s to %s_%s with payload %s", 
-                     command, device_type, device_id, payload)
+                     command, device_type, device_id if device_id else "(single)", payload)
+        
+        # For single devices, device_id might be None
+        idn = str(device_id) if device_id is not None else None
+        
         await self.hass.async_add_executor_job(
             self.client.send_command,
             device_type,
             command,
-            str(device_id),
+            idn,
             payload
         )
 

@@ -13,5 +13,5 @@
     "binary_sensor"
   ],
   "iot_class": "Local Polling",
-  "version": "1.0.0"
+  "version": "1.0.1"
 }

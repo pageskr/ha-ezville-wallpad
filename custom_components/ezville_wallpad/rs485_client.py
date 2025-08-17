@@ -729,10 +729,10 @@ class EzvilleRS485Client:
                                         self._callbacks[device_type](device_type, thermostat_room, individual_state)
                     
                     else:
-                        # Other device types (fan, gas, energy, elevator, doorbell)
-                        device_key = f"{device_type}_{device_num}"
-                        _LOGGER.info("=> %s state for device %s: %s", 
-                                   device_type.capitalize(), device_key, state_data)
+                        # Other device types (fan, gas, energy, elevator, doorbell) - single devices
+                        device_key = device_type  # No device_num suffix for single devices
+                        _LOGGER.info("=> %s state: %s", 
+                                   device_type.capitalize(), state_data)
                         
                         # Check if new device
                         if device_key not in self._discovered_devices:
@@ -742,7 +742,7 @@ class EzvilleRS485Client:
                             # Call discovery callbacks
                             for callback in self._device_discovery_callbacks:
                                 try:
-                                    callback(device_type, device_num)
+                                    callback(device_type, None)  # No device_id for single devices
                                 except Exception as err:
                                     _LOGGER.error("Error in discovery callback: %s", err)
                         
@@ -751,7 +751,7 @@ class EzvilleRS485Client:
                         
                         # Call callback
                         if device_type in self._callbacks:
-                            self._callbacks[device_type](device_type, device_num, state_data)
+                            self._callbacks[device_type](device_type, None, state_data)
                 
                 return
             else:
@@ -822,8 +822,11 @@ class EzvilleRS485Client:
         if command == 0x01 and device_id in [0x0E, 0x32, 0x36, 0x39, 0x60]:
             return
         
+        # Create signature from first 4 bytes
+        signature = packet[:4].hex()
+        
         # Create unknown device key
-        device_key = f"unknown_{device_id:02x}"
+        device_key = f"unknown_{signature}"
         device_type = "unknown"
         
         # Extract state data
@@ -831,31 +834,32 @@ class EzvilleRS485Client:
             "device_id": f"0x{device_id:02X}",
             "device_num": device_num,
             "command": f"0x{command:02X}",
-            "data": packet.hex()
+            "data": packet.hex(),
+            "signature": signature
         }
         
         # Check if this is a state update packet (usually with command >= 0x80)
         if command >= 0x80 and len(packet) > 4:
             state["raw_data"] = ' '.join([f"{b:02x}" for b in packet[4:-2]])
         
-        # Check if new device
+        # Check if new device/signature
         if device_key not in self._discovered_devices:
             self._discovered_devices.add(device_key)
-            _LOGGER.info("=> NEW UNKNOWN DEVICE discovered: %s (ID: 0x%02X)", device_key, device_id)
+            _LOGGER.info("=> NEW UNKNOWN DEVICE discovered: %s (signature: %s)", device_key, signature)
             
-            # Call discovery callbacks
+            # Call discovery callbacks with signature as device_id
             for callback in self._device_discovery_callbacks:
                 try:
-                    callback(device_type, f"{device_id:02x}")
+                    callback(device_type, signature)
                 except Exception as err:
                     _LOGGER.error("Error in discovery callback: %s", err)
         
         # Update state
         self._device_states[device_key] = state
         
-        # Call callback if registered
+        # Call callback if registered with signature as device_id
         if "unknown" in self._callbacks:
-            self._callbacks["unknown"](device_type, f"{device_id:02x}", state)
+            self._callbacks["unknown"](device_type, signature, state)
         
         _LOGGER.debug("=> Unknown device %s updated with state: %s", device_key, state)
 
@@ -974,7 +978,11 @@ class EzvilleRS485Client:
         
         else:
             # Other devices - simple format
-            device_num = int(idn)
+            # For single devices (fan, gas, energy, elevator, doorbell), idn can be None or device number
+            if idn is None:
+                device_num = 0x01  # Default device number for single devices
+            else:
+                device_num = int(idn)
             packet = bytearray([0xF7, cmd_info["id"], device_num, cmd_info["cmd"]])
             
             # Add payload
@@ -1011,7 +1019,7 @@ class EzvilleSerial:
     
     def _connect(self):
         """Connect to serial port."""
-        _LOGGER.debug("Opening serial port %s", self.port)
+        _LOGGER.info("Opening serial port %s with settings: 9600 8N1", self.port)
         self._serial = serial.Serial(
             port=self.port,
             baudrate=9600,
@@ -1053,7 +1061,7 @@ class EzvilleSocket:
     
     def _connect(self):
         """Connect to socket."""
-        _LOGGER.debug("Connecting to socket %s:%s", self.host, self.port)
+        _LOGGER.info("Connecting to socket %s:%s", self.host, self.port)
         self._socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self._socket.connect((self.host, self.port))
         _LOGGER.info("Socket connection to %s:%s established", self.host, self.port)
@@ -1111,7 +1119,7 @@ class EzvilleMqtt:
     
     def _connect(self):
         """Connect to MQTT broker."""
-        _LOGGER.debug("Connecting to MQTT broker %s:%s with QoS %d", 
+        _LOGGER.info("Connecting to MQTT broker %s:%s with QoS %d", 
                      self.broker, self.port, self.qos)
         
         self._client = mqtt.Client()
@@ -1172,7 +1180,7 @@ class EzvilleMqtt:
         try:
             # Parse the message payload
             if msg.topic == self.topic_recv:
-                _LOGGER.debug("MQTT MSG on %s: %d bytes", msg.topic, len(msg.payload))
+                _LOGGER.info("MQTT message received on %s: %d bytes", msg.topic, len(msg.payload))
                 
                 # Assume the payload is hex string or bytes
                 if isinstance(msg.payload, bytes):
@@ -1223,7 +1231,7 @@ class EzvilleMqtt:
             # Format as comma-separated hex values
             formatted = ','.join([hex_str[i:i+2] for i in range(0, len(hex_str), 2)])
             self._client.publish(self.topic_send, formatted, qos=self.qos)
-            _LOGGER.debug("Sent MQTT data to %s with QoS %d: %s", 
+            _LOGGER.info("Sent MQTT command to %s with QoS %d: %s", 
                         self.topic_send, self.qos, formatted)
     
     def set_timeout(self, timeout: Optional[float]):

@@ -25,15 +25,32 @@
      - 특별 포맷 처리: room_id == 0x01 체크
      - 표준 포맷: room_id + index로 실제 room 번호 계산
      - 로그 형식: "Thermostat Room: X"
+   - 단일 기기 처리 개선
+     - fan, gas, energy, elevator, doorbell은 device_key = device_type (번호 없음)
+     - 예: "doorbell_1" → "doorbell"
+   - Unknown 기기 처리 개선
+     - signature(첫 4바이트) 기반으로 device_key 생성
+     - 예: "unknown_f7602f81"
+     - signature를 device_id로 사용하여 구성요소 생성
    - 명령 패킷 생성 로직 수정
      - Thermostat: device_num = (room_id << 4) | 0
+     - 단일 기기: idn이 None일 경우 device_num = 0x01
    - MQTT 로그 개선
      - "Created signature" 로그 추가 (최초 패킷)
      - "Updated signature" 로그 유지 (변경된 패킷)
-   - Unknown 디바이스 처리 로직 추가
    - 0x39 디바이스 처리 개선
 
 2. **custom_components/ezville_wallpad/coordinator.py**
+   - 초기 기기 생성 키 형식 수정
+     - 단일 기기: doorbell, elevator, energy, gas, fan (번호 없음)
+     - 다중 기기: light_1_1, plug_1_1, thermostat_1 (번호 있음)
+   - _on_device_discovered 메서드 개선
+     - device_type별로 다른 키 형식 적용
+     - 단일 기기는 device_type만 사용
+   - _device_update_callback 메서드 개선
+     - device_type별로 다른 키 형식 적용
+   - send_command 메서드 수정
+     - 단일 기기의 경우 device_id가 None 허용
    - Unknown 디바이스 콜백 등록
    - 스레드 안전성 개선
      - async_set_updated_data 호출 시 event loop 사용
@@ -52,65 +69,51 @@
 
 ## 주요 버그 수정
 
-### 1. 패킷 분석 로그 개선
+### 1. 기기 키 형식 통일
+- **단일 기기** (fan, gas, energy, elevator, doorbell):
+  - 기존: `{device_type}_{device_num}` (예: doorbell_1)
+  - 수정: `{device_type}` (예: doorbell)
+- **다중 기기** (light, plug, thermostat):
+  - 유지: `{device_type}_{room}_{num}` 또는 `{device_type}_{room}`
+
+### 2. Unknown 기기 처리
+- **기존**: device_id 기반 (예: unknown_60)
+- **수정**: signature 기반 (예: unknown_f7602f81)
+- 각 고유한 패킷 signature마다 별도 구성요소 생성
+
+### 3. 패킷 분석 로그 개선
 메인 로그 포맷:
-- Light: "Packet Analysis - Device ID: 0x0E, Room: 0x01(1), Cmd: 0x81, Packet: ..."
-- Plug: "Packet Analysis - Device ID: 0x39, Room: 0x01(1), Cmd: 0x81, Packet: ..."
-- Thermostat: "Packet Analysis - Device ID: 0x36, Room: 0x01(1), Cmd: 0x81, Packet: ..."
+- Light: "Packet Analysis - Device ID: 0x0E(Light), Room: 0x01(1), Cmd: 0x81, Packet: ..."
+- Plug: "Packet Analysis - Device ID: 0x39(Plug), Room: 0x01(1), Cmd: 0x81, Packet: ..."
+- Thermostat: "Packet Analysis - Device ID: 0x36(Thermostat), Room: 0x01(1), Cmd: 0x81, Packet: ..."
 - 기타: "Packet Analysis - Device ID: 0xXX, Num: 0xXX(XX), Cmd: 0xXX, Packet: ..."
 
 상세 로그 포맷:
 - Light: "=> Light Room: 1, Num: 1, state: ON (key: light_1_1)"
 - Plug: "=> Plug Room: 2, Num: 1, state: ON, Power: 123.6W (key: plug_2_1, bytes: ...)"
 - Thermostat: "=> Thermostat Room: 1 - Current: 25°C, Target: 23°C (key: thermostat_1)"
+- 단일 기기: "=> Fan state: {'power': False, 'speed': 0, 'mode': 'bypass'}"
 
-### 2. Light 패킷 분석 수정
-```python
-room_id = int(device_num & 0x0F)
-light_count = packet[4] - 1
-light_state = (packet[6 + light_num - 1] & 1) == 1
-device_key = f"light_{room_id}_{light_num}"
-```
-
-### 3. Plug 패킷 분석 수정
-```python
-room_id = int(device_num >> 4)
-plug_count = int(data_length / 3)
-base_idx = plug_num * 3 + 3
-power_high = format((packet[base_idx] & 0x0F) | (packet[base_idx + 1] << 4) | (packet[base_idx + 2] >> 4), 'x')
-power_decimal = format(packet[base_idx + 2] & 0x0F, 'x')
-power_usage_str = f"{power_high}.{power_decimal}"
-device_key = f"plug_{room_id}_{plug_num}"
-```
-
-### 4. Thermostat 패킷 분석 수정
-```python
-room_id = int(device_num >> 4)
-# 특별 포맷
-if room_id == 0x01 and data_length == 0x0D:
-    thermostat_room = room_id + i
-    device_key = f"thermostat_{thermostat_room}"
-# 표준 포맷
-thermostat_room = room_id + thermo_idx
-device_key = f"thermostat_{thermostat_room}"
-```
-
-### 5. 스레드 안전성 문제 해결
+### 4. 스레드 안전성 문제 해결
 - `async_write_ha_state`가 다른 스레드에서 호출되는 문제 수정
 - `call_soon_threadsafe` 사용하여 event loop에서 실행
 
-### 6. Valve 엔티티 에러 수정
+### 5. Valve 엔티티 에러 수정
 - `reports_position` 속성 누락 문제 해결
 - Gas valve는 위치 정보를 제공하지 않으므로 False 설정
 
 ## 새로운 기능
 
-### 1. Unknown 디바이스 자동 생성
-- STATE_HEADER에 없는 디바이스 자동 감지
-- "Unknown XX" 형태로 센서 생성
-- 원시 패킷 데이터 표시
+### 1. 단일 기기 자동 인식
+- fan, gas, energy, elevator, doorbell은 자동으로 단일 기기로 처리
+- 번호 없이 device_type만으로 식별
 
-### 2. 향상된 MQTT 로깅
+### 2. Unknown 디바이스 자동 생성
+- STATE_HEADER에 없는 디바이스 자동 감지
+- signature 기반으로 고유한 구성요소 생성
+- 원시 패킷 데이터를 상태값으로 표시
+
+### 3. 향상된 MQTT 로깅
 - 최초 패킷: "Created signature"
 - 변경된 패킷: "Updated signature"
 - 패킷별 상세 분석 로그
@@ -120,15 +123,15 @@ device_key = f"thermostat_{thermostat_room}"
 - ✅ Light 패킷 분석 (f70e118104000000006d08)
 - ✅ Plug 패킷 분석 (f7391f810700900167100137879e)
 - ✅ Thermostat 패킷 분석 (f7361f810d00000f0000051d051d)
+- ✅ 단일 기기 처리 (doorbell, elevator, energy, gas, fan)
+- ✅ Unknown 기기 signature 기반 처리
 - ✅ MQTT 중복 제거 및 로깅
-- ✅ Unknown 디바이스 처리
 - ✅ 스레드 안전성
 - ✅ Valve 엔티티 동작
 
 ## 알려진 이슈
 
-1. 0x40 디바이스가 const.py에 정의되지 않음
-   - doorbell로 정의되어 있으나 command 0x02는 미지원
+1. 0x40 디바이스가 const.py에 doorbell로 정의되어 있으나 command 0x02는 미지원
    - Unknown 디바이스로 처리됨
 
 ## 사용 예시
@@ -171,4 +174,21 @@ f7 36 1f 81 0d 00 00 0f 00 00 05 1d 05 1d
 - Thermostat data starts at index 10
 - Thermostat 1: Current 29°C (0x1d), Target 29°C (0x1d)
 결과: thermostat_1 = 29°C/29°C
+```
+
+### 단일 기기 예시:
+```
+- doorbell (초인종)
+- elevator (엘리베이터)
+- energy (에너지 미터)
+- gas (가스 밸브)
+- fan (환기팬)
+```
+
+### Unknown 기기 예시:
+```
+f7 60 2f 81 ...
+- signature: f7602f81
+- device_key: unknown_f7602f81
+- 구성요소명: Unknown f7602f81
 ```

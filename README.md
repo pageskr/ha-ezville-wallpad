@@ -32,7 +32,7 @@
 ### 🔧 **유연한 연결 방식**
 - **🔗 시리얼 포트**: USB-to-RS485 컨버터 사용
 - **🌐 TCP/IP 소켓**: 네트워크를 통한 원격 연결
-- **📡 MQTT**: MQTT 브로커를 통한 연결
+- **📡 MQTT**: MQTT 브로커를 통한 연결 (실시간 이벤트 기반)
 
 ## 📸 스크린샷
 
@@ -97,8 +97,15 @@ cp -r custom_components/ezville_wallpad /config/custom_components/
 사용자명/비밀번호: (선택사항)
 수신 토픽: ezville/wallpad/recv
 송신 토픽: ezville/wallpad/send
+QoS: 0 (기본값, 0-2 선택가능)
 활성화 장치: 모든 장치 (기본값)
 ```
+
+**MQTT 모드 특징:**
+- 실시간 이벤트 기반 업데이트 (폴링 없음)
+- 동적 디바이스 발견 및 자동 추가
+- 낮은 네트워크 부하
+- 원격 접속 가능
 
 ### 3단계: 고급 설정 (옵션)
 
@@ -377,6 +384,15 @@ pylint custom_components/
 ![GitHub forks](https://img.shields.io/github/forks/pageskr/ha-ezville-wallpad?style=social)
 ![GitHub issues](https://img.shields.io/github/issues/pageskr/ha-ezville-wallpad)
 ![GitHub pull requests](https://img.shields.io/github/issues-pr/pageskr/ha-ezville-wallpad)
+
+## 🔄 변경 이력
+
+### v1.0.1 (2025-08-17)
+- ✅ MQTT QoS 설정 추가
+- ✅ MQTT 모드에서 폴링 제거 (이벤트 기반)
+- ✅ 동적 디바이스 자동 추가 기능
+- ✅ deprecated 경고 수정
+- ✅ 디버그 로그 강화
 
 ---
 
