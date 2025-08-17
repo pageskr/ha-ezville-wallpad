@@ -6,7 +6,7 @@
   "issue_tracker": "https://github.com/pageskr/ha-ezville-wallpad/issues",
   "dependencies": [],
   "config_flow": true,
-  "codeowners": ["@hipekr"],
+  "codeowners": ["@pageskr"],
   "requirements": [
     "pyserial>=3.5",
     "paho-mqtt>=1.6.1"

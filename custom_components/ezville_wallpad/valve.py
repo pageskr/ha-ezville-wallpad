@@ -68,6 +68,7 @@ class EzvilleGasValve(CoordinatorEntity, ValveEntity):
             ValveEntityFeature.OPEN |
             ValveEntityFeature.CLOSE
         )
+        self._attr_reports_position = False  # Gas valve doesn't report position
         
         # Device info는 base class에서 처리하도록 함
         self._attr_device_info = coordinator.get_device_info(device_key)

@@ -309,6 +309,8 @@ class EzvilleRS485Client:
                 # Check if value has changed
                 if signature in self._previous_mqtt_values:
                     _LOGGER.info("Updated signature %s: %s", signature, ' '.join([f"{b:02x}" for b in msg[4:]]))
+                else:
+                    _LOGGER.info("Created signature %s: %s", signature, ' '.join([f"{b:02x}" for b in msg[4:]]))
                 
                 self._previous_mqtt_values[signature] = msg
                 
@@ -486,20 +488,21 @@ class EzvilleRS485Client:
                 if state_data:
                     # Device identification based on type
                     if device_type == "light":
-                        # Extract room and device info
-                        grp_id = device_num >> 4
-                        rm_id = device_num & 0x0F
-                        _LOGGER.info("=> Light state: Group %d, Room %d (device_num=0x%02X)", grp_id, rm_id, device_num)
+                        # Extract room number from lower 4 bits
+                        room_id = int(device_num & 0x0F)
+                        _LOGGER.info("=> Light state: Room %d (device_num=0x%02X)", room_id, device_num)
                         
                         if len(packet) > 4:
-                            light_count = packet[4]
+                            # Light count is 5th byte minus 1
+                            light_count = packet[4] - 1
                             _LOGGER.info("=> Light count in room: %d", light_count)
                             
                             # Process each light in the room
                             for light_num in range(1, min(light_count + 1, 4)):  # Max 3 lights
-                                if len(packet) > 5 + light_num - 1:
-                                    device_key = f"{device_type}_{rm_id}_{light_num}"
-                                    light_state = (packet[5 + light_num - 1] & 1) == 1
+                                # Light states start from 7th byte (index 6)
+                                if len(packet) > 6 + light_num - 1:
+                                    device_key = f"{device_type}_{room_id}_{light_num}"
+                                    light_state = (packet[6 + light_num - 1] & 1) == 1
                                     
                                     individual_state = {"power": light_state}
                                     _LOGGER.info("=> Light %s state: %s", device_key, 
@@ -513,7 +516,7 @@ class EzvilleRS485Client:
                                         # Call discovery callbacks
                                         for callback in self._device_discovery_callbacks:
                                             try:
-                                                callback(device_type, f"{rm_id}_{light_num}")
+                                                callback(device_type, f"{room_id}_{light_num}")
                                             except Exception as err:
                                                 _LOGGER.error("Error in discovery callback: %s", err)
                                     
@@ -522,44 +525,49 @@ class EzvilleRS485Client:
                                     
                                     # Call callback
                                     if device_type in self._callbacks:
-                                        self._callbacks[device_type](device_type, f"{rm_id}_{light_num}", 
+                                        self._callbacks[device_type](device_type, f"{room_id}_{light_num}", 
                                                                    individual_state)
                     
                     elif device_type == "plug":
-                        grp_id = device_num >> 4
-                        rm_id = device_num & 0x0F
-                        _LOGGER.info("=> Plug state: Group %d, Room %d (device_num=0x%02X)", grp_id, rm_id, device_num)
+                        # Extract room number from upper 4 bits
+                        room_id = int(device_num >> 4)
+                        _LOGGER.info("=> Plug state: Room %d (device_num=0x%02X)", room_id, device_num)
                         
                         if len(packet) > 5:
                             data_length = packet[4]
-                            plug_count = data_length // 3  # 3 bytes per plug
+                            # Plug count is data length divided by 3
+                            plug_count = int(data_length / 3)
                             _LOGGER.info("=> Data length: %d, Plug count: %d", data_length, plug_count)
                             
                             # Process each plug
                             for plug_num in range(1, min(plug_count + 1, 3)):  # Max 2 plugs
-                                base_idx = 5 + (plug_num - 1) * 3  # Start from byte 5
+                                # Calculate index for this plug's data
+                                base_idx = plug_num * 3 + 3  # Start from index for each plug
                                 if len(packet) > base_idx + 2:
-                                    # Use room ID for device key, not group ID
-                                    device_key = f"{device_type}_{rm_id}_{plug_num}"
+                                    device_key = f"{device_type}_{room_id}_{plug_num}"
                                     
                                     # Parse plug data
-                                    byte1 = packet[base_idx]
-                                    byte2 = packet[base_idx + 1]
-                                    byte3 = packet[base_idx + 2]
+                                    # Power state is bit 4 of the first byte
+                                    power_state = (packet[base_idx] & 0x10) != 0
                                     
-                                    power_state = (byte1 & 0x10) != 0
-                                    # Power usage calculation - need to verify this formula
-                                    power_high = (byte1 & 0x0F) | (byte2 << 4)
-                                    power_decimal = byte3 & 0x0F
-                                    power_usage = float(f"{power_high}.{power_decimal}")
+                                    # Power usage calculation
+                                    power_high = format((packet[base_idx] & 0x0F) | (packet[base_idx + 1] << 4) | (packet[base_idx + 2] >> 4), 'x')
+                                    power_decimal = format(packet[base_idx + 2] & 0x0F, 'x')
+                                    power_usage_str = f"{power_high}.{power_decimal}"
+                                    
+                                    # Convert to float
+                                    try:
+                                        power_usage = float(power_usage_str)
+                                    except:
+                                        power_usage = 0.0
                                     
                                     individual_state = {
                                         "power": power_state,
                                         "power_usage": power_usage
                                     }
-                                    _LOGGER.info("=> Plug %s state: %s, Power: %.1fW (bytes: %02X %02X %02X)", 
-                                               device_key, "ON" if power_state else "OFF", power_usage,
-                                               byte1, byte2, byte3)
+                                    _LOGGER.info("=> Plug %s state: %s, Power: %sW (bytes: %02X %02X %02X)", 
+                                               device_key, "ON" if power_state else "OFF", power_usage_str,
+                                               packet[base_idx], packet[base_idx + 1], packet[base_idx + 2])
                                     
                                     # Check if new device
                                     if device_key not in self._discovered_devices:
@@ -569,7 +577,7 @@ class EzvilleRS485Client:
                                         # Call discovery callbacks
                                         for callback in self._device_discovery_callbacks:
                                             try:
-                                                callback(device_type, f"{rm_id}_{plug_num}")
+                                                callback(device_type, f"{room_id}_{plug_num}")
                                             except Exception as err:
                                                 _LOGGER.error("Error in discovery callback: %s", err)
                                     
@@ -578,13 +586,13 @@ class EzvilleRS485Client:
                                     
                                     # Call callback
                                     if device_type in self._callbacks:
-                                        self._callbacks[device_type](device_type, f"{rm_id}_{plug_num}", 
+                                        self._callbacks[device_type](device_type, f"{room_id}_{plug_num}", 
                                                                    individual_state)
                     
                     elif device_type == "thermostat":
-                        grp_id = device_num >> 4
-                        rm_id = device_num & 0x0F
-                        _LOGGER.info("=> Thermostat state: Group %d, Room %d (device_num=0x%02X)", grp_id, rm_id, device_num)
+                        # Extract room number from upper 4 bits
+                        room_id = int(device_num >> 4)
+                        _LOGGER.info("=> Thermostat state: Room %d (device_num=0x%02X)", room_id, device_num)
                         
                         if len(packet) > 4:
                             data_length = packet[4]
@@ -596,7 +604,7 @@ class EzvilleRS485Client:
                                              ' '.join([f'{b:02X}' for b in packet[5:]]))
                             
                             # Different parsing based on packet format
-                            if device_num == 0x1F and data_length == 0x0D:  # Special format from log
+                            if room_id == 0x01 and data_length == 0x0D:  # Special format from log
                                 # Format: f7 36 1f 81 0d 00 00 0f 00 00 05 1e 05 1c 05 1b 05 1b 5f cc
                                 # bytes 5-9: header/status bytes
                                 # bytes 10-11: temp pair 1 (target, current)
@@ -935,7 +943,7 @@ class EzvilleRS485Client:
         elif device == "thermostat":
             # idn is just the room number
             room_id = int(idn)
-            device_num = (0 << 4) | room_id
+            device_num = (room_id << 4) | 0  # Room in upper 4 bits
             # Create packet
             packet = bytearray([0xF7, cmd_info["id"], device_num, cmd_info["cmd"], 0x01])
             if command == "mode":

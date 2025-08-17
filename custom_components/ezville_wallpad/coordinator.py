@@ -1,6 +1,7 @@
 """Data update coordinator for Ezville Wallpad."""
 import logging
 import asyncio
+import threading
 from datetime import timedelta
 from typing import Any, Dict, Optional, Callable
 from logging.handlers import TimedRotatingFileHandler
@@ -284,8 +285,10 @@ class EzvilleWallpadCoordinator(DataUpdateCoordinator):
             # Check if platform needs to be loaded
             self._check_and_load_platform(device_type)
             
-            # Notify that data has been updated
-            self.async_set_updated_data(self.devices)
+            # Notify that data has been updated - schedule in event loop
+            self.hass.loop.call_soon_threadsafe(
+                lambda: self.async_set_updated_data(self.devices)
+            )
 
     def _check_and_load_platform(self, device_type: str):
         """Check if platform needs to be loaded for device type."""
@@ -445,8 +448,13 @@ class EzvilleWallpadCoordinator(DataUpdateCoordinator):
         
         _LOGGER.debug("Device %s updated with state: %s", device_key, state)
         
-        # Trigger coordinator update
-        self.async_set_updated_data(self.devices)
+        # Trigger coordinator update - schedule in event loop if called from thread
+        if threading.current_thread() is threading.main_thread():
+            self.async_set_updated_data(self.devices)
+        else:
+            self.hass.loop.call_soon_threadsafe(
+                lambda: self.async_set_updated_data(self.devices)
+            )
         
         # Call entity callbacks if registered
         if device_key in self._entity_callbacks:
