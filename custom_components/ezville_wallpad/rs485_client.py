@@ -517,7 +517,8 @@ class EzvilleRS485Client:
                 
                 # Parse state data based on device type
                 state_data = self._parse_state(device_type, packet)
-                if state_data:
+                # For light, plug, thermostat - they are handled inline below
+                if device_type in ["light", "plug", "thermostat"]:
                     # Device identification based on type
                     if device_type == "light":
                         # Extract room number from lower 4 bits
@@ -832,53 +833,53 @@ class EzvilleRS485Client:
                                         self._callbacks[device_type](device_type, thermostat_room, individual_state)
                                         _LOGGER.debug("=> Callback completed for %s", device_key)
                     
+                elif state_data:  # Other device types that return state_data
+                    # Other device types (fan, gas, energy, elevator, doorbell) - single devices
+                    device_key = device_type  # No device_num suffix for single devices
+                    # Check if state changed
+                    old_state = self._device_states.get(device_key, {})
+                    state_changed = False
+                    change_desc = []
+                        
+                    for k, v in state_data.items():
+                        if old_state.get(k) != v:
+                            state_changed = True
+                            change_desc.append(f"{k}: {old_state.get(k)} → {v}")
+                    
+                    if state_changed:
+                        _LOGGER.info("=> %s state: %s, changes: %s [UPDATED component '%s']", 
+                                   device_type.capitalize(), state_data, ", ".join(change_desc), device_key)
                     else:
-                        # Other device types (fan, gas, energy, elevator, doorbell) - single devices
-                        device_key = device_type  # No device_num suffix for single devices
-                        # Check if state changed
-                        old_state = self._device_states.get(device_key, {})
-                        state_changed = False
-                        change_desc = []
+                        _LOGGER.info("=> %s state: %s [no change]", 
+                                   device_type.capitalize(), state_data)
+                    
+                    # Check if new device
+                    if device_key not in self._discovered_devices:
+                        self._discovered_devices.add(device_key)
+                        _LOGGER.info("=> NEW DEVICE discovered: %s", device_key)
                         
-                        for k, v in state_data.items():
-                            if old_state.get(k) != v:
-                                state_changed = True
-                                change_desc.append(f"{k}: {old_state.get(k)} → {v}")
-                        
-                        if state_changed:
-                            _LOGGER.info("=> %s state: %s, changes: %s [UPDATED component '%s']", 
-                                       device_type.capitalize(), state_data, ", ".join(change_desc), device_key)
-                        else:
-                            _LOGGER.info("=> %s state: %s [no change]", 
-                                       device_type.capitalize(), state_data)
-                        
-                        # Check if new device
-                        if device_key not in self._discovered_devices:
-                            self._discovered_devices.add(device_key)
-                            _LOGGER.info("=> NEW DEVICE discovered: %s", device_key)
-                            
-                            # Call discovery callbacks
-                            for callback in self._device_discovery_callbacks:
-                                try:
-                                    callback(device_type, None)  # No device_id for single devices
-                                except Exception as err:
-                                    _LOGGER.error("Error in discovery callback: %s", err)
-                        
-                        # Update state
-                        old_full_state = self._device_states.get(device_key, {}).copy()
-                        self._device_states[device_key] = state_data
-                        
-                        # Log actual update
-                        device_display_name = device_type.capitalize()
-                        _LOGGER.info("=> Update state: %s, entity_key: %s, old_state: %s, new_state: %s",
-                                   device_display_name, device_key, old_full_state, state_data)
-                        
-                        # Call callback
-                        if device_type in self._callbacks:
-                            _LOGGER.debug("=> Calling callback for %s with key=None, state=%s", 
-                                         device_type, state_data)
-                            self._callbacks[device_type](device_type, None, state_data)
-                            _LOGGER.debug("=> Callback completed for %s", device_key)
+                        # Call discovery callbacks
+                        for callback in self._device_discovery_callbacks:
+                            try:
+                                callback(device_type, None)  # No device_id for single devices
+                            except Exception as err:
+                                _LOGGER.error("Error in discovery callback: %s", err)
+                    
+                    # Update state
+                    old_full_state = self._device_states.get(device_key, {}).copy()
+                    self._device_states[device_key] = state_data
+                    
+                    # Log actual update
+                    device_display_name = device_type.capitalize()
+                    _LOGGER.info("=> Update state: %s, entity_key: %s, old_state: %s, new_state: %s",
+                               device_display_name, device_key, old_full_state, state_data)
+                    
+                    # Call callback
+                    if device_type in self._callbacks:
+                        _LOGGER.debug("=> Calling callback for %s with key=None, state=%s", 
+                                     device_type, state_data)
+                        self._callbacks[device_type](device_type, None, state_data)
+                        _LOGGER.debug("=> Callback completed for %s", device_key)
                 
                 return
             else:
