@@ -122,13 +122,7 @@ class EzvilleWallpadCoordinator(DataUpdateCoordinator):
         self.client.register_callback("unknown", self._device_update_callback)
         _LOGGER.debug("Registered callback for unknown devices")
         
-        # Create initial unknown device for tracking
-        self.devices["unknown"] = {
-            "device_type": "unknown",
-            "device_id": "system",
-            "name": "Unknown Devices",
-            "state": {"count": 0}
-        }
+        # Unknown devices will be created dynamically when discovered
 
     def _initialize_default_devices(self):
         """Initialize default devices for enabled capabilities."""
@@ -437,8 +431,12 @@ class EzvilleWallpadCoordinator(DataUpdateCoordinator):
     @callback
     def _device_update_callback(self, device_type: str, device_id: Any, state: Dict[str, Any]):
         """Handle device state updates."""
+        _LOGGER.debug("==> Coordinator received callback: device_type=%s, device_id=%s, state=%s",
+                     device_type, device_id, state)
+        
         # Skip if device type not in enabled capabilities (except unknown)
         if device_type != "unknown" and device_type not in self.capabilities:
+            _LOGGER.debug("==> Skipping device_type %s (not in capabilities)", device_type)
             return
             
         # Handle different key formats based on device type
@@ -454,7 +452,7 @@ class EzvilleWallpadCoordinator(DataUpdateCoordinator):
         
         # Update or create device entry
         if device_key not in self.devices:
-            _LOGGER.info("New device detected via state update: %s", device_key)
+            _LOGGER.info("==> New device detected via state update: %s", device_key)
             
             # Parse device ID to get display name
             if device_type in ["light", "plug"] and isinstance(device_id, str) and "_" in device_id:
@@ -478,9 +476,11 @@ class EzvilleWallpadCoordinator(DataUpdateCoordinator):
             # Check if platform needs to be loaded
             self._check_and_load_platform(device_type)
         else:
+            old_device_state = self.devices[device_key].get("state", {}).copy()
             self.devices[device_key]["state"] = state
+            _LOGGER.debug("==> Device %s state updated from %s to %s", device_key, old_device_state, state)
         
-        _LOGGER.debug("Device %s updated with state: %s", device_key, state)
+        _LOGGER.debug("==> Device %s current full info: %s", device_key, self.devices.get(device_key))
         
         # Trigger coordinator update - schedule in event loop if called from thread
         if threading.current_thread() is threading.main_thread():
@@ -492,12 +492,18 @@ class EzvilleWallpadCoordinator(DataUpdateCoordinator):
         
         # Call entity callbacks if registered
         if device_key in self._entity_callbacks:
-            for callback in self._entity_callbacks[device_key]:
+            _LOGGER.debug("==> Found %d entity callbacks for device_key %s", 
+                         len(self._entity_callbacks[device_key]), device_key)
+            for idx, callback in enumerate(self._entity_callbacks[device_key]):
                 # Call callbacks safely from any thread
                 try:
+                    _LOGGER.debug("==> Calling entity callback [%d] for %s", idx, device_key)
                     callback()
+                    _LOGGER.debug("==> Entity callback [%d] completed for %s", idx, device_key)
                 except Exception as err:
-                    _LOGGER.error("Error in entity callback for %s: %s", device_key, err)
+                    _LOGGER.error("==> Error in entity callback [%d] for %s: %s", idx, device_key, err)
+        else:
+            _LOGGER.debug("==> No entity callbacks registered for device_key %s", device_key)
 
     def register_entity_callback(self, device_key: str, callback: Callable):
         """Register a callback for entity updates."""

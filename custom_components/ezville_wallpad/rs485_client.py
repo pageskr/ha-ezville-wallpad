@@ -539,14 +539,19 @@ class EzvilleRS485Client:
                                     individual_state = {"power": light_state}
                                     
                                     # Check if state changed
-                                    old_state = self._device_states.get(device_key, {}).get("power")
-                                    if old_state != light_state:
-                                        _LOGGER.info("=> Light Room: %d, Num: %d, state: %s → %s (key: %s) [UPDATED component '%s']", 
-                                                   room_id, light_num, "ON" if old_state else "OFF" if old_state is not None else "UNKNOWN",
-                                                   "ON" if light_state else "OFF", device_key, device_key)
+                                    old_state_dict = self._device_states.get(device_key, {})
+                                    old_power = old_state_dict.get("power")
+                                    changes = []
+                                    
+                                    if old_power != light_state:
+                                        changes.append(f"switch: {'On' if old_power else 'Off' if old_power is not None else 'Unknown'} → {'On' if light_state else 'Off'}")
+                                    
+                                    if changes:
+                                        _LOGGER.info("=> Light_%d_%d state: {'switch': '%s'}, changes: %s [UPDATED component '%s']", 
+                                                   room_id, light_num, "ON" if light_state else "OFF", ", ".join(changes), device_key)
                                     else:
-                                        _LOGGER.info("=> Light Room: %d, Num: %d, state: %s (key: %s) [no change]", 
-                                                   room_id, light_num, "ON" if light_state else "OFF", device_key)
+                                        _LOGGER.info("=> Light_%d_%d state: {'switch': '%s'} [no change]", 
+                                                   room_id, light_num, "ON" if light_state else "OFF")
                                     
                                     # Check if new device
                                     if device_key not in self._discovered_devices:
@@ -561,12 +566,20 @@ class EzvilleRS485Client:
                                                 _LOGGER.error("Error in discovery callback: %s", err)
                                     
                                     # Update state
+                                    old_full_state = self._device_states.get(device_key, {}).copy()
                                     self._device_states[device_key] = individual_state
+                                    
+                                    # Log actual update
+                                    _LOGGER.info("=> Update state: Light %d %d, entity_key: %s, old_state: %s, new_state: %s",
+                                               room_id, light_num, device_key, old_full_state, individual_state)
                                     
                                     # Call callback
                                     if device_type in self._callbacks:
+                                        _LOGGER.debug("=> Calling callback for %s with key=%s, state=%s", 
+                                                     device_type, f"{room_id}_{light_num}", individual_state)
                                         self._callbacks[device_type](device_type, f"{room_id}_{light_num}", 
                                                                    individual_state)
+                                        _LOGGER.debug("=> Callback completed for %s", device_key)
                     
                     elif device_type == "plug":
                         # Extract room number from upper 4 bits
@@ -610,19 +623,19 @@ class EzvilleRS485Client:
                                     old_state = self._device_states.get(device_key, {})
                                     old_power = old_state.get("power")
                                     old_usage = old_state.get("power_usage")
+                                    changes = []
                                     
-                                    if old_power != power_state or old_usage != power_usage:
-                                        _LOGGER.info("=> Plug Room: %d, Num: %d, state: %s → %s, Power: %sW → %sW (key: %s, bytes: %02X %02X %02X) [UPDATED component '%s']", 
-                                                   room_id, plug_num, 
-                                                   "ON" if old_power else "OFF" if old_power is not None else "UNKNOWN",
-                                                   "ON" if power_state else "OFF",
-                                                   f"{old_usage:.1f}" if old_usage is not None else "UNKNOWN",
-                                                   power_usage_str, device_key,
-                                                   packet[base_idx], packet[base_idx + 1], packet[base_idx + 2], device_key)
+                                    if old_power != power_state:
+                                        changes.append(f"switch: {'On' if old_power else 'Off' if old_power is not None else 'Unknown'} → {'On' if power_state else 'Off'}")
+                                    if old_usage != power_usage:
+                                        changes.append(f"power: {old_usage if old_usage is not None else 0} → {power_usage}")
+                                    
+                                    if changes:
+                                        _LOGGER.info("=> Plug_%d_%d state: {'switch': '%s', 'power': %s}, changes: %s [UPDATED component '%s']", 
+                                                   room_id, plug_num, "ON" if power_state else "OFF", power_usage, ", ".join(changes), device_key)
                                     else:
-                                        _LOGGER.info("=> Plug Room: %d, Num: %d, state: %s, Power: %sW (key: %s, bytes: %02X %02X %02X) [no change]", 
-                                                   room_id, plug_num, "ON" if power_state else "OFF", power_usage_str, device_key,
-                                                   packet[base_idx], packet[base_idx + 1], packet[base_idx + 2])
+                                        _LOGGER.info("=> Plug_%d_%d state: {'switch': '%s', 'power': %s} [no change]", 
+                                                   room_id, plug_num, "ON" if power_state else "OFF", power_usage)
                                     
                                     # Check if new device
                                     if device_key not in self._discovered_devices:
@@ -637,12 +650,20 @@ class EzvilleRS485Client:
                                                 _LOGGER.error("Error in discovery callback: %s", err)
                                     
                                     # Update state
+                                    old_full_state = self._device_states.get(device_key, {}).copy()
                                     self._device_states[device_key] = individual_state
+                                    
+                                    # Log actual update
+                                    _LOGGER.info("=> Update state: Plug %d %d, entity_key: %s, old_state: %s, new_state: %s",
+                                               room_id, plug_num, device_key, old_full_state, individual_state)
                                     
                                     # Call callback
                                     if device_type in self._callbacks:
+                                        _LOGGER.debug("=> Calling callback for %s with key=%s, state=%s", 
+                                                     device_type, f"{room_id}_{plug_num}", individual_state)
                                         self._callbacks[device_type](device_type, f"{room_id}_{plug_num}", 
                                                                    individual_state)
+                                        _LOGGER.debug("=> Callback completed for %s", device_key)
                     
                     elif device_type == "thermostat":
                         # Extract room number from upper 4 bits
@@ -726,10 +747,19 @@ class EzvilleRS485Client:
                                                 except Exception as err:
                                                     _LOGGER.error("Error in discovery callback: %s", err)
                                         
+                                        # Update state
+                                        old_full_state = self._device_states.get(device_key, {}).copy()
                                         self._device_states[device_key] = individual_state
                                         
+                                        # Log actual update
+                                        _LOGGER.info("=> Update state: Thermostat %d, entity_key: %s, old_state: %s, new_state: %s",
+                                                   thermostat_room, device_key, old_full_state, individual_state)
+                                        
                                         if device_type in self._callbacks:
+                                            _LOGGER.debug("=> Calling callback for %s with key=%s, state=%s", 
+                                                         device_type, thermostat_room, individual_state)
                                             self._callbacks[device_type](device_type, thermostat_room, individual_state)
+                                            _LOGGER.debug("=> Callback completed for %s", device_key)
                                         
                             else:
                                 # Standard thermostat packet format
@@ -788,10 +818,19 @@ class EzvilleRS485Client:
                                             except Exception as err:
                                                 _LOGGER.error("Error in discovery callback: %s", err)
                                     
+                                    # Update state
+                                    old_full_state = self._device_states.get(device_key, {}).copy()
                                     self._device_states[device_key] = individual_state
                                     
+                                    # Log actual update
+                                    _LOGGER.info("=> Update state: Thermostat %d, entity_key: %s, old_state: %s, new_state: %s",
+                                               thermostat_room, device_key, old_full_state, individual_state)
+                                    
                                     if device_type in self._callbacks:
+                                        _LOGGER.debug("=> Calling callback for %s with key=%s, state=%s", 
+                                                     device_type, thermostat_room, individual_state)
                                         self._callbacks[device_type](device_type, thermostat_room, individual_state)
+                                        _LOGGER.debug("=> Callback completed for %s", device_key)
                     
                     else:
                         # Other device types (fan, gas, energy, elevator, doorbell) - single devices
@@ -826,11 +865,20 @@ class EzvilleRS485Client:
                                     _LOGGER.error("Error in discovery callback: %s", err)
                         
                         # Update state
+                        old_full_state = self._device_states.get(device_key, {}).copy()
                         self._device_states[device_key] = state_data
+                        
+                        # Log actual update
+                        device_display_name = device_type.capitalize()
+                        _LOGGER.info("=> Update state: %s, entity_key: %s, old_state: %s, new_state: %s",
+                                   device_display_name, device_key, old_full_state, state_data)
                         
                         # Call callback
                         if device_type in self._callbacks:
+                            _LOGGER.debug("=> Calling callback for %s with key=None, state=%s", 
+                                         device_type, state_data)
                             self._callbacks[device_type](device_type, None, state_data)
+                            _LOGGER.debug("=> Callback completed for %s", device_key)
                 
                 return
             else:
@@ -937,11 +985,19 @@ class EzvilleRS485Client:
                     _LOGGER.error("Error in discovery callback: %s", err)
         
         # Update state
+        old_full_state = self._device_states.get(device_key, {}).copy()
         self._device_states[device_key] = state
+        
+        # Log actual update
+        _LOGGER.info("=> Update state: Unknown %s, entity_key: %s, old_state: %s, new_state: %s",
+                   signature, device_key, old_full_state, state)
         
         # Call callback if registered with signature as device_id
         if "unknown" in self._callbacks:
+            _LOGGER.debug("=> Calling callback for unknown with key=%s, state=%s", 
+                         signature, state)
             self._callbacks["unknown"](device_type, signature, state)
+            _LOGGER.debug("=> Callback completed for %s", device_key)
         
         _LOGGER.debug("=> Unknown device %s updated with state: %s", device_key, state)
 
@@ -1196,9 +1252,6 @@ class EzvilleMqtt:
         
         # Configure MQTT logger to be shorter
         logging.getLogger("paho.mqtt").setLevel(logging.INFO)
-        # Custom formatter for paho-mqtt logs
-        mqtt_logger = logging.getLogger("paho.mqtt.client")
-        mqtt_logger.name = "paho-mqtt"
     
     async def async_connect(self):
         """Connect to MQTT broker asynchronously."""
@@ -1268,7 +1321,7 @@ class EzvilleMqtt:
         try:
             # Parse the message payload
             if msg.topic == self.topic_recv:
-                _LOGGER.info("MQTT message received on %s: %d bytes", msg.topic, len(msg.payload))
+                _LOGGER.debug("MQTT message received on %s: %d bytes", msg.topic, len(msg.payload))
                 
                 # Assume the payload is hex string or bytes
                 if isinstance(msg.payload, bytes):

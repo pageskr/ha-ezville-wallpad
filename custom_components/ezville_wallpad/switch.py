@@ -138,11 +138,16 @@ class EzvilleSwitch(CoordinatorEntity, SwitchEntity):
 
     def _handle_coordinator_update(self) -> None:
         """Handle updated data from the coordinator."""
+        current_state = self.coordinator.devices.get(self._device_key, {}).get("state", {})
+        _LOGGER.debug("===> Switch entity %s received update callback, current_state: %s", 
+                     self._attr_name, current_state)
+        
         # Schedule update safely from any thread
         if hasattr(self, 'hass') and self.hass:
+            _LOGGER.debug("===> Scheduling state write for switch entity %s", self._attr_name)
             self.hass.loop.call_soon_threadsafe(self.async_write_ha_state)
         else:
-            _LOGGER.warning("Cannot update state - hass not available")
+            _LOGGER.warning("===> Cannot update state for %s - hass not available", self._attr_name)
 
     async def async_added_to_hass(self) -> None:
         """When entity is added to hass."""
