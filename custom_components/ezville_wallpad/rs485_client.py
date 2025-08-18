@@ -509,9 +509,6 @@ class EzvilleRS485Client:
             _LOGGER.info("Packet Analysis - Device ID: 0x%02X, Num: 0x%02X(%d), Cmd: 0x%02X, Packet: %s", 
                          device_id, device_num, device_num, command, packet.hex())
         
-        # Handle unknown devices
-        self._handle_unknown_device(packet)
-        
         # Check if this is a state packet
         if device_id in STATE_HEADER:
             device_type, expected_cmd = STATE_HEADER[device_id]
@@ -544,11 +541,11 @@ class EzvilleRS485Client:
                                     # Check if state changed
                                     old_state = self._device_states.get(device_key, {}).get("power")
                                     if old_state != light_state:
-                                        _LOGGER.info("=> Light Room: %d, Num: %d, state: %s → %s (key: %s, updated)", 
+                                        _LOGGER.info("=> Light Room: %d, Num: %d, state: %s → %s (key: %s) [UPDATED component '%s']", 
                                                    room_id, light_num, "ON" if old_state else "OFF" if old_state is not None else "UNKNOWN",
-                                                   "ON" if light_state else "OFF", device_key)
+                                                   "ON" if light_state else "OFF", device_key, device_key)
                                     else:
-                                        _LOGGER.info("=> Light Room: %d, Num: %d, state: %s (key: %s)", 
+                                        _LOGGER.info("=> Light Room: %d, Num: %d, state: %s (key: %s) [no change]", 
                                                    room_id, light_num, "ON" if light_state else "OFF", device_key)
                                     
                                     # Check if new device
@@ -615,15 +612,15 @@ class EzvilleRS485Client:
                                     old_usage = old_state.get("power_usage")
                                     
                                     if old_power != power_state or old_usage != power_usage:
-                                        _LOGGER.info("=> Plug Room: %d, Num: %d, state: %s → %s, Power: %sW → %sW (key: %s, bytes: %02X %02X %02X, updated)", 
+                                        _LOGGER.info("=> Plug Room: %d, Num: %d, state: %s → %s, Power: %sW → %sW (key: %s, bytes: %02X %02X %02X) [UPDATED component '%s']", 
                                                    room_id, plug_num, 
                                                    "ON" if old_power else "OFF" if old_power is not None else "UNKNOWN",
                                                    "ON" if power_state else "OFF",
                                                    f"{old_usage:.1f}" if old_usage is not None else "UNKNOWN",
                                                    power_usage_str, device_key,
-                                                   packet[base_idx], packet[base_idx + 1], packet[base_idx + 2])
+                                                   packet[base_idx], packet[base_idx + 1], packet[base_idx + 2], device_key)
                                     else:
-                                        _LOGGER.info("=> Plug Room: %d, Num: %d, state: %s, Power: %sW (key: %s, bytes: %02X %02X %02X)", 
+                                        _LOGGER.info("=> Plug Room: %d, Num: %d, state: %s, Power: %sW (key: %s, bytes: %02X %02X %02X) [no change]", 
                                                    room_id, plug_num, "ON" if power_state else "OFF", power_usage_str, device_key,
                                                    packet[base_idx], packet[base_idx + 1], packet[base_idx + 2])
                                     
@@ -705,8 +702,18 @@ class EzvilleRS485Client:
                                             "target_temperature": target_temp
                                         }
                                         
-                                        _LOGGER.info("=> Thermostat Room: %d - Current: %d°C, Target: %d°C (key: %s, idx=%d)",
-                                                   thermostat_room, current_temp, target_temp, device_key, idx)
+                                        # Check if state changed
+                                        old_state = self._device_states.get(device_key, {})
+                                        old_current = old_state.get("current_temperature")
+                                        old_target = old_state.get("target_temperature")
+                                        
+                                        if old_current != current_temp or old_target != target_temp:
+                                            _LOGGER.info("=> Thermostat Room: %d - Current: %d°C → %d°C, Target: %d°C → %d°C (key: %s, idx=%d) [UPDATED component '%s']",
+                                                       thermostat_room, old_current if old_current is not None else 0, current_temp,
+                                                       old_target if old_target is not None else 0, target_temp, device_key, idx, device_key)
+                                        else:
+                                            _LOGGER.info("=> Thermostat Room: %d - Current: %d°C, Target: %d°C (key: %s, idx=%d) [no change]",
+                                                       thermostat_room, current_temp, target_temp, device_key, idx)
                                         
                                         # Device discovery and callback handling
                                         if device_key not in self._discovered_devices:
@@ -752,9 +759,23 @@ class EzvilleRS485Client:
                                         "target_temperature": target_temp
                                     }
                                     
-                                    _LOGGER.info("=> Thermostat Room: %d - Mode: %s, Away: %s, Current: %d°C, Target: %d°C (key: %s)",
-                                               thermostat_room, "Heat" if mode_on else "Off", "On" if away_on else "Off",
-                                               current_temp, target_temp, device_key)
+                                    # Check if state changed
+                                    old_state = self._device_states.get(device_key, {})
+                                    old_mode = old_state.get("mode")
+                                    old_current = old_state.get("current_temperature")
+                                    old_target = old_state.get("target_temperature")
+                                    
+                                    mode_value = 1 if mode_on else 0
+                                    if old_mode != mode_value or old_current != current_temp or old_target != target_temp:
+                                        _LOGGER.info("=> Thermostat Room: %d - Mode: %s → %s, Away: %s, Current: %d°C → %d°C, Target: %d°C → %d°C (key: %s) [UPDATED component '%s']",
+                                                   thermostat_room, "Heat" if old_mode == 1 else "Off" if old_mode == 0 else "UNKNOWN",
+                                                   "Heat" if mode_on else "Off", "On" if away_on else "Off",
+                                                   old_current if old_current is not None else 0, current_temp,
+                                                   old_target if old_target is not None else 0, target_temp, device_key, device_key)
+                                    else:
+                                        _LOGGER.info("=> Thermostat Room: %d - Mode: %s, Away: %s, Current: %d°C, Target: %d°C (key: %s) [no change]",
+                                                   thermostat_room, "Heat" if mode_on else "Off", "On" if away_on else "Off",
+                                                   current_temp, target_temp, device_key)
                                     
                                     # Device discovery and callback handling
                                     if device_key not in self._discovered_devices:
@@ -775,8 +796,22 @@ class EzvilleRS485Client:
                     else:
                         # Other device types (fan, gas, energy, elevator, doorbell) - single devices
                         device_key = device_type  # No device_num suffix for single devices
-                        _LOGGER.info("=> %s state: %s", 
-                                   device_type.capitalize(), state_data)
+                        # Check if state changed
+                        old_state = self._device_states.get(device_key, {})
+                        state_changed = False
+                        change_desc = []
+                        
+                        for k, v in state_data.items():
+                            if old_state.get(k) != v:
+                                state_changed = True
+                                change_desc.append(f"{k}: {old_state.get(k)} → {v}")
+                        
+                        if state_changed:
+                            _LOGGER.info("=> %s state: %s, changes: %s [UPDATED component '%s']", 
+                                       device_type.capitalize(), state_data, ", ".join(change_desc), device_key)
+                        else:
+                            _LOGGER.info("=> %s state: %s [no change]", 
+                                       device_type.capitalize(), state_data)
                         
                         # Check if new device
                         if device_key not in self._discovered_devices:
@@ -843,11 +878,14 @@ class EzvilleRS485Client:
             _LOGGER.info("=> Unknown device 0x60 control packet: device_num=0x%02X", device_num)
             return
         
-        # Unknown packet - log detailed info
+        # Unknown packet - handle it
         _LOGGER.warning("Unknown packet: %s | Device: 0x%02X | Num: 0x%02X (dec: %d) | Cmd: 0x%02X | State headers: %s | ACK headers: %s",
                        packet.hex(), device_id, device_num, device_num, command,
                        ','.join([f"0x{k:02X}" for k in STATE_HEADER.keys()]),
                        ','.join([f"0x{k:02X}" for k in ACK_HEADER.keys()]))
+        
+        # Handle unknown devices
+        self._handle_unknown_device(packet)
     
     def _handle_unknown_device(self, packet: bytes):
         """Handle unknown devices and create entries for them."""

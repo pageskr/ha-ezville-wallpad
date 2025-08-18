@@ -65,6 +65,11 @@ class EzvilleWallpadDevice(CoordinatorEntity):
         elif device_type == "doorbell":
             device_name = "Doorbell"
             device_identifier = self._device_key
+        elif device_type == "unknown":
+            # unknown_f7393f81 -> Unknown f7393f81
+            signature = parts[1] if len(parts) > 1 else "unknown"
+            device_name = f"Unknown {signature}"
+            device_identifier = self._device_key
         else:
             device_name = f"Ezville Wallpad {self._device_key}"
             device_identifier = self._device_key
@@ -91,6 +96,7 @@ class EzvilleWallpadDevice(CoordinatorEntity):
             "energy": None,
             "elevator": "현관",
             "doorbell": "현관",
+            "unknown": None,
         }
         return area_mapping.get(device_type)
 
@@ -108,6 +114,7 @@ class EzvilleWallpadDevice(CoordinatorEntity):
             "energy": "mdi:flash",
             "elevator": "mdi:elevator",
             "doorbell": "mdi:doorbell",
+            "unknown": "mdi:help-circle",
         }
         return icons.get(device_type, "mdi:home-automation")  # LG brand style fallback
 

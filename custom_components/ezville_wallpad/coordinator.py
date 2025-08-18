@@ -121,6 +121,14 @@ class EzvilleWallpadCoordinator(DataUpdateCoordinator):
         # Always register callback for unknown devices
         self.client.register_callback("unknown", self._device_update_callback)
         _LOGGER.debug("Registered callback for unknown devices")
+        
+        # Create initial unknown device for tracking
+        self.devices["unknown"] = {
+            "device_type": "unknown",
+            "device_id": "system",
+            "name": "Unknown Devices",
+            "state": {"count": 0}
+        }
 
     def _initialize_default_devices(self):
         """Initialize default devices for enabled capabilities."""
