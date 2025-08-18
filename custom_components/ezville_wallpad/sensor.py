@@ -127,16 +127,11 @@ class EzvillePowerSensor(CoordinatorEntity, SensorEntity):
 
     def _handle_coordinator_update(self) -> None:
         """Handle updated data from the coordinator."""
-        current_state = self.coordinator.devices.get(self._device_key, {}).get("state", {})
-        _LOGGER.debug("===> Power sensor entity %s received update callback, current_state: %s", 
-                     self._attr_name, current_state)
-        
         # Schedule update safely from any thread
         if hasattr(self, 'hass') and self.hass:
-            _LOGGER.debug("===> Scheduling state write for power sensor entity %s", self._attr_name)
             self.hass.loop.call_soon_threadsafe(self.async_write_ha_state)
         else:
-            _LOGGER.warning("===> Cannot update state for %s - hass not available", self._attr_name)
+            _LOGGER.debug("===> Cannot update state for %s - hass not available", self._attr_name)
 
     async def async_added_to_hass(self) -> None:
         """When entity is added to hass."""
@@ -173,7 +168,7 @@ class EzvilleEnergySensor(CoordinatorEntity, SensorEntity):
         self._device_key = device_key
         self._device_info = device_info
         self._attr_unique_id = f"{DOMAIN}_{device_key}_energy"
-        self._attr_name = "Energy Meter Usage"
+        self._attr_name = "Energy Meter"
         self._attr_device_class = SensorDeviceClass.ENERGY
         self._attr_state_class = SensorStateClass.TOTAL_INCREASING
         self._attr_native_unit_of_measurement = UnitOfEnergy.KILO_WATT_HOUR
@@ -198,16 +193,11 @@ class EzvilleEnergySensor(CoordinatorEntity, SensorEntity):
 
     def _handle_coordinator_update(self) -> None:
         """Handle updated data from the coordinator."""
-        current_state = self.coordinator.devices.get(self._device_key, {}).get("state", {})
-        _LOGGER.debug("===> Energy sensor entity %s received update callback, current_state: %s", 
-                     self._attr_name, current_state)
-        
         # Schedule update safely from any thread
         if hasattr(self, 'hass') and self.hass:
-            _LOGGER.debug("===> Scheduling state write for energy sensor entity %s", self._attr_name)
             self.hass.loop.call_soon_threadsafe(self.async_write_ha_state)
         else:
-            _LOGGER.warning("===> Cannot update state for %s - hass not available", self._attr_name)
+            _LOGGER.debug("===> Cannot update state for %s - hass not available", self._attr_name)
 
     async def async_added_to_hass(self) -> None:
         """When entity is added to hass."""
@@ -285,16 +275,11 @@ class EzvilleUnknownSensor(CoordinatorEntity, SensorEntity):
 
     def _handle_coordinator_update(self) -> None:
         """Handle updated data from the coordinator."""
-        current_state = self.coordinator.devices.get(self._device_key, {}).get("state", {})
-        _LOGGER.debug("===> Unknown sensor entity %s received update callback, current_state: %s", 
-                     self._attr_name, current_state)
-        
         # Schedule update safely from any thread
         if hasattr(self, 'hass') and self.hass:
-            _LOGGER.debug("===> Scheduling state write for unknown sensor entity %s", self._attr_name)
             self.hass.loop.call_soon_threadsafe(self.async_write_ha_state)
         else:
-            _LOGGER.warning("===> Cannot update state for %s - hass not available", self._attr_name)
+            _LOGGER.debug("===> Cannot update state for %s - hass not available", self._attr_name)
 
     async def async_added_to_hass(self) -> None:
         """When entity is added to hass."""

@@ -244,7 +244,7 @@ class EzvilleRS485Client:
         buffer = bytearray()
         
         # Set custom thread name for cleaner logs
-        threading.current_thread().name = "message_loop"
+        threading.current_thread().name = "paho-mqtt"
         
         while self._running:
             try:
@@ -1250,9 +1250,6 @@ class EzvilleMqtt:
         self._recv_buf = bytearray()
         self._connected = False
         self._connect_event = threading.Event()
-        
-        # Configure MQTT logger to be shorter
-        logging.getLogger("paho.mqtt").setLevel(logging.INFO)
     
     async def async_connect(self):
         """Connect to MQTT broker asynchronously."""

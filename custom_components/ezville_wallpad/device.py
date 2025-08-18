@@ -51,13 +51,13 @@ class EzvilleWallpadDevice(CoordinatorEntity):
             device_name = "Thermostat"
             device_identifier = device_type
         elif device_type == "gas":
-            device_name = "Gas Valve"
+            device_name = "Gas"
             device_identifier = self._device_key
         elif device_type == "fan":
-            device_name = "Ventilation Fan"
+            device_name = "Ventilation"
             device_identifier = self._device_key
         elif device_type == "energy":
-            device_name = "Energy Meter"
+            device_name = "Energy"
             device_identifier = self._device_key
         elif device_type == "elevator":
             device_name = "Elevator"

@@ -66,7 +66,7 @@ class EzvilleFan(CoordinatorEntity, FanEntity):
         self._device_key = device_key
         self._device_info = device_info
         self._attr_unique_id = f"{DOMAIN}_{device_key}"
-        self._attr_name = "Ventilation Fan Mode"
+        self._attr_name = "Ventilation Fan"
         
         # Set capabilities
         self._attr_supported_features = (
@@ -170,7 +170,7 @@ class EzvilleFan(CoordinatorEntity, FanEntity):
         if hasattr(self, 'hass') and self.hass:
             self.hass.loop.call_soon_threadsafe(self.async_write_ha_state)
         else:
-            _LOGGER.warning("Cannot update state - hass not available")
+            _LOGGER.debug("Cannot update state - hass not available")
 
     async def async_added_to_hass(self) -> None:
         """When entity is added to hass."""

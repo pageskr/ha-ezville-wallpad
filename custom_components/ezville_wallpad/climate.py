@@ -205,7 +205,7 @@ class EzvilleThermostat(CoordinatorEntity, ClimateEntity):
         if hasattr(self, 'hass') and self.hass:
             self.hass.loop.call_soon_threadsafe(self.async_write_ha_state)
         else:
-            _LOGGER.warning("Cannot update state - hass not available")
+            _LOGGER.debug("Cannot update state - hass not available")
 
     async def async_added_to_hass(self) -> None:
         """When entity is added to hass."""

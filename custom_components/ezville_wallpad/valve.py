@@ -60,7 +60,7 @@ class EzvilleGasValve(CoordinatorEntity, ValveEntity):
         self._device_key = device_key
         self._device_info = device_info
         self._attr_unique_id = f"{DOMAIN}_{device_key}"
-        self._attr_name = "Gas Valve Close"
+        self._attr_name = "Gas Valve"
         self._attr_device_class = ValveDeviceClass.GAS
         
         # Set capabilities
@@ -126,7 +126,7 @@ class EzvilleGasValve(CoordinatorEntity, ValveEntity):
         if hasattr(self, 'hass') and self.hass:
             self.hass.loop.call_soon_threadsafe(self.async_write_ha_state)
         else:
-            _LOGGER.warning("Cannot update state - hass not available")
+            _LOGGER.debug("Cannot update state - hass not available")
 
     async def async_added_to_hass(self) -> None:
         """When entity is added to hass."""

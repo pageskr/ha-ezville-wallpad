@@ -154,7 +154,7 @@ class EzvilleWallpadCoordinator(DataUpdateCoordinator):
             self.devices[device_key] = {
                 "device_type": "energy",
                 "device_id": None,
-                "name": "Energy Meter",
+                "name": "Energy",
                 "state": {"power": 0, "usage": 0}
             }
             _LOGGER.debug("Created default energy meter: %s", device_key)
@@ -164,7 +164,7 @@ class EzvilleWallpadCoordinator(DataUpdateCoordinator):
             self.devices[device_key] = {
                 "device_type": "gas",
                 "device_id": None,
-                "name": "Gas Valve",
+                "name": "Gas",
                 "state": {"closed": True}
             }
             _LOGGER.debug("Created default gas valve: %s", device_key)
@@ -174,7 +174,7 @@ class EzvilleWallpadCoordinator(DataUpdateCoordinator):
             self.devices[device_key] = {
                 "device_type": "fan",
                 "device_id": None,
-                "name": "Ventilation Fan",
+                "name": "Ventilation",
                 "state": {"power": False, "speed": 0, "mode": "bypass"}
             }
             _LOGGER.debug("Created default ventilation fan: %s", device_key)
@@ -450,8 +450,22 @@ class EzvilleWallpadCoordinator(DataUpdateCoordinator):
             # Single instance devices (fan, gas, energy, elevator, doorbell)
             device_key = device_type
         
+        # Check if state has actually changed
+        is_new_device = device_key not in self.devices
+        state_changed = False
+        
+        if not is_new_device:
+            # Compare old and new state
+            old_state = self.devices[device_key].get("state", {})
+            state_changed = old_state != state
+            
+            if not state_changed:
+                # No change, skip update
+                _LOGGER.debug("==> Device %s state unchanged, skipping update", device_key)
+                return
+        
         # Update or create device entry
-        if device_key not in self.devices:
+        if is_new_device:
             _LOGGER.info("==> New device detected via state update: %s", device_key)
             
             # Parse device ID to get display name
@@ -490,7 +504,7 @@ class EzvilleWallpadCoordinator(DataUpdateCoordinator):
                 lambda: self.async_set_updated_data(self.devices)
             )
         
-        # Call entity callbacks if registered
+        # Call entity callbacks if registered (only if state changed or new device)
         if device_key in self._entity_callbacks:
             _LOGGER.debug("==> Found %d entity callbacks for device_key %s", 
                          len(self._entity_callbacks[device_key]), device_key)
