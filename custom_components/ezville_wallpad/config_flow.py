@@ -114,10 +114,14 @@ class EzvilleWallpadConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                         "max_retry": user_input.get("max_retry", DEFAULT_MAX_RETRY),
                         "dump_time": user_input.get("dump_time", 0),
                         "log_to_file": user_input.get("log_to_file", False),
-                        "capabilities": user_input.get("capabilities", [
+                        "logging_device_types": user_input.get("logging_device_types", [
+                            "light", "plug", "thermostat", "fan", "gas", 
+                            "energy", "elevator", "doorbell", "unknown"
+                        ]),
+                        "capabilities": [
                             "light", "plug", "thermostat", "fan", "gas", 
                             "energy", "elevator", "doorbell"
-                        ]),
+                        ],
                     },
                 )
                 
@@ -137,12 +141,12 @@ class EzvilleWallpadConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 vol.Coerce(int), vol.Range(min=0, max=60)
             ),
             vol.Optional("log_to_file", default=False): bool,
-            vol.Optional("capabilities", default=[
+            vol.Optional("logging_device_types", default=[
                 "light", "plug", "thermostat", "fan", "gas", 
-                "energy", "elevator", "doorbell"
+                "energy", "elevator", "doorbell", "unknown"
             ]): cv.multi_select([
                 "light", "plug", "thermostat", "fan", "gas", 
-                "energy", "elevator", "doorbell"
+                "energy", "elevator", "doorbell", "unknown"
             ]),
         })
 
@@ -189,10 +193,14 @@ class EzvilleWallpadConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                         "max_retry": user_input.get("max_retry", DEFAULT_MAX_RETRY),
                         "dump_time": user_input.get("dump_time", 0),
                         "log_to_file": user_input.get("log_to_file", False),
-                        "capabilities": user_input.get("capabilities", [
+                        "logging_device_types": user_input.get("logging_device_types", [
+                            "light", "plug", "thermostat", "fan", "gas", 
+                            "energy", "elevator", "doorbell", "unknown"
+                        ]),
+                        "capabilities": [
                             "light", "plug", "thermostat", "fan", "gas", 
                             "energy", "elevator", "doorbell"
-                        ]),
+                        ],
                     },
                 )
                 
@@ -213,12 +221,12 @@ class EzvilleWallpadConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 vol.Coerce(int), vol.Range(min=0, max=60)
             ),
             vol.Optional("log_to_file", default=False): bool,
-            vol.Optional("capabilities", default=[
+            vol.Optional("logging_device_types", default=[
                 "light", "plug", "thermostat", "fan", "gas", 
-                "energy", "elevator", "doorbell"
+                "energy", "elevator", "doorbell", "unknown"
             ]): cv.multi_select([
                 "light", "plug", "thermostat", "fan", "gas", 
-                "energy", "elevator", "doorbell"
+                "energy", "elevator", "doorbell", "unknown"
             ]),
         })
 
@@ -283,10 +291,14 @@ class EzvilleWallpadConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     },
                     options={
                         "log_to_file": user_input.get("log_to_file", False),
-                        "capabilities": user_input.get("capabilities", [
+                        "logging_device_types": user_input.get("logging_device_types", [
+                            "light", "plug", "thermostat", "fan", "gas", 
+                            "energy", "elevator", "doorbell", "unknown"
+                        ]),
+                        "capabilities": [
                             "light", "plug", "thermostat", "fan", "gas", 
                             "energy", "elevator", "doorbell"
-                        ]),
+                        ],
                     },
                 )
                 
@@ -307,12 +319,12 @@ class EzvilleWallpadConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 vol.Coerce(int), vol.Range(min=0, max=2)
             ),
             vol.Optional("log_to_file", default=False): bool,
-            vol.Optional("capabilities", default=[
+            vol.Optional("logging_device_types", default=[
                 "light", "plug", "thermostat", "fan", "gas", 
-                "energy", "elevator", "doorbell"
+                "energy", "elevator", "doorbell", "unknown"
             ]): cv.multi_select([
                 "light", "plug", "thermostat", "fan", "gas", 
-                "energy", "elevator", "doorbell"
+                "energy", "elevator", "doorbell", "unknown"
             ]),
         })
 
@@ -377,14 +389,14 @@ class EzvilleWallpadOptionsFlowHandler(config_entries.OptionsFlow):
                     default=self.config_entry.options.get("log_to_file", False),
                 ): bool,
                 vol.Optional(
-                    "capabilities",
-                    default=self.config_entry.options.get("capabilities", [
+                    "logging_device_types",
+                    default=self.config_entry.options.get("logging_device_types", [
                         "light", "plug", "thermostat", "fan", "gas", 
-                        "energy", "elevator", "doorbell"
+                        "energy", "elevator", "doorbell", "unknown"
                     ]),
                 ): cv.multi_select([
                     "light", "plug", "thermostat", "fan", "gas", 
-                    "energy", "elevator", "doorbell"
+                    "energy", "elevator", "doorbell", "unknown"
                 ]),
             })
         else:
@@ -407,14 +419,14 @@ class EzvilleWallpadOptionsFlowHandler(config_entries.OptionsFlow):
                     default=self.config_entry.options.get("log_to_file", False),
                 ): bool,
                 vol.Optional(
-                    "capabilities",
-                    default=self.config_entry.options.get("capabilities", [
+                    "logging_device_types",
+                    default=self.config_entry.options.get("logging_device_types", [
                         "light", "plug", "thermostat", "fan", "gas", 
-                        "energy", "elevator", "doorbell"
+                        "energy", "elevator", "doorbell", "unknown"
                     ]),
                 ): cv.multi_select([
                     "light", "plug", "thermostat", "fan", "gas", 
-                    "energy", "elevator", "doorbell"
+                    "energy", "elevator", "doorbell", "unknown"
                 ]),
             })
 

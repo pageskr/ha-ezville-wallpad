@@ -5,6 +5,37 @@ MANUFACTURER = "Pages in Korea (pages.kr)"
 MODEL = "Ezville Wallpad"
 DOCUMENTATION_URL = "https://github.com/pageskr/ha-ezville-wallpad"
 
+# Logging helper
+def log_debug(logger, device_type, message, *args):
+    """Log debug message if logging is enabled for the device type."""
+    from . import LOGGING_ENABLED, LOGGING_DEVICE_TYPES
+    if LOGGING_ENABLED and device_type in LOGGING_DEVICE_TYPES:
+        logger.debug(message, *args)
+
+def log_info(logger, device_type, message, *args):
+    """Log info message if logging is enabled for the device type."""
+    from . import LOGGING_ENABLED, LOGGING_DEVICE_TYPES
+    if LOGGING_ENABLED and device_type in LOGGING_DEVICE_TYPES:
+        logger.info(message, *args)
+
+def log_warning(logger, device_type, message, *args):
+    """Log warning message if logging is enabled for the device type."""
+    from . import LOGGING_ENABLED, LOGGING_DEVICE_TYPES
+    if LOGGING_ENABLED and device_type in LOGGING_DEVICE_TYPES:
+        logger.warning(message, *args)
+
+def log_error(logger, device_type, message, *args):
+    """Log error message if logging is enabled for the device type."""
+    from . import LOGGING_ENABLED, LOGGING_DEVICE_TYPES
+    if LOGGING_ENABLED and device_type in LOGGING_DEVICE_TYPES:
+        logger.error(message, *args)
+
+def log_system(logger, message, *args):
+    """Log system message if general logging is enabled."""
+    from . import LOGGING_ENABLED
+    if LOGGING_ENABLED:
+        logger.info(message, *args)
+
 # Configuration keys
 CONF_SERIAL_PORT = "serial_port"
 CONF_HOST = "host"

@@ -15,7 +15,12 @@ from .const import (
     CONNECTION_TYPE_MQTT,
     MANUFACTURER,
     MODEL,
-    DOCUMENTATION_URL
+    DOCUMENTATION_URL,
+    log_debug,
+    log_info,
+    log_warning,
+    log_error,
+    log_system,
 )
 from .rs485_client import EzvilleRS485Client
 
@@ -74,10 +79,11 @@ class EzvilleWallpadCoordinator(DataUpdateCoordinator):
         
         # Get options from config entry
         self.options = config_entry.options
-        self.capabilities = self.options.get("capabilities", [
+        # Always include all capabilities for device discovery
+        self.capabilities = [
             "light", "plug", "thermostat", "fan", "gas", 
             "energy", "elevator", "doorbell"
-        ])
+        ]
         
         _LOGGER.info("Initializing coordinator with capabilities: %s", self.capabilities)
         

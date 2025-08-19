@@ -13,7 +13,7 @@ from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import DOMAIN
+from .const import DOMAIN, log_debug, log_info, log_warning, log_error
 from .coordinator import EzvilleWallpadCoordinator
 
 _LOGGER = logging.getLogger("custom_components.ezville_wallpad.sensor")
@@ -43,11 +43,16 @@ async def async_setup_entry(
             entities.append(EzvillePowerSensor(coordinator, device_key, device_info))
             _LOGGER.info("Added power sensor for %s", device_key)
         
-        # Add energy monitor sensor
-        if device_info["device_type"] == "energy" and f"{device_key}_energy" not in added_devices:
-            added_devices.add(f"{device_key}_energy")
-            entities.append(EzvilleEnergySensor(coordinator, device_key, device_info))
-            _LOGGER.info("Added energy sensor for %s", device_key)
+        # Add energy monitor sensors
+        if device_info["device_type"] == "energy":
+            if f"{device_key}_energy" not in added_devices:
+                added_devices.add(f"{device_key}_energy")
+                entities.append(EzvilleEnergySensor(coordinator, device_key, device_info))
+                log_info(_LOGGER, "energy", "Added energy sensor for %s", device_key)
+            if f"{device_key}_current_power" not in added_devices:
+                added_devices.add(f"{device_key}_current_power")
+                entities.append(EzvilleEnergyPowerSensor(coordinator, device_key, device_info))
+                log_info(_LOGGER, "energy", "Added energy power sensor for %s", device_key)
         
         # Add unknown device sensor
         if device_info["device_type"] == "unknown" and f"{device_key}_unknown" not in added_devices:
@@ -218,6 +223,71 @@ class EzvilleEnergySensor(CoordinatorEntity, SensorEntity):
             self._handle_coordinator_update
         )
         _LOGGER.debug("Energy sensor %s removed from hass", self._attr_name)
+
+
+class EzvilleEnergyPowerSensor(CoordinatorEntity, SensorEntity):
+    """Ezville Wallpad energy power sensor."""
+
+    def __init__(
+        self,
+        coordinator: EzvilleWallpadCoordinator,
+        device_key: str,
+        device_info: dict,
+    ) -> None:
+        """Initialize the sensor."""
+        super().__init__(coordinator)
+        self._device_key = device_key
+        self._device_info = device_info
+        self._attr_unique_id = f"{DOMAIN}_{device_key}_current_power"
+        self._attr_name = "Energy Power"
+        self._attr_device_class = SensorDeviceClass.POWER
+        self._attr_state_class = SensorStateClass.MEASUREMENT
+        self._attr_native_unit_of_measurement = UnitOfPower.WATT
+        
+        # Device info from coordinator
+        self._attr_device_info = coordinator.get_device_info(device_key)
+        
+        log_debug(_LOGGER, "energy", "Initialized energy power sensor: %s", self._attr_name)
+
+    @property
+    def native_value(self) -> Optional[float]:
+        """Return the state of the sensor."""
+        device = self.coordinator.devices.get(self._device_key, {})
+        state = device.get("state", {})
+        return state.get("current_power", 0)
+
+    @property
+    def available(self) -> bool:
+        """Return if entity is available."""
+        return self._device_key in self.coordinator.devices
+
+    def _handle_coordinator_update(self) -> None:
+        """Handle updated data from the coordinator."""
+        # Schedule update safely from any thread
+        if hasattr(self, 'hass') and self.hass:
+            self.hass.loop.call_soon_threadsafe(self.async_write_ha_state)
+        else:
+            log_debug(_LOGGER, "energy", "Cannot update state for %s - hass not available", self._attr_name)
+
+    async def async_added_to_hass(self) -> None:
+        """When entity is added to hass."""
+        await super().async_added_to_hass()
+        # Register for direct updates
+        self.coordinator.register_entity_callback(
+            self._device_key,
+            self._handle_coordinator_update
+        )
+        log_debug(_LOGGER, "energy", "Energy power sensor %s added to hass", self._attr_name)
+
+    async def async_will_remove_from_hass(self) -> None:
+        """When entity will be removed from hass."""
+        await super().async_will_remove_from_hass()
+        # Unregister callback
+        self.coordinator.unregister_entity_callback(
+            self._device_key,
+            self._handle_coordinator_update
+        )
+        log_debug(_LOGGER, "energy", "Energy power sensor %s removed from hass", self._attr_name)
 
 
 class EzvilleUnknownSensor(CoordinatorEntity, SensorEntity):

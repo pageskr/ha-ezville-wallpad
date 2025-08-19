@@ -17,7 +17,7 @@
           "max_retry": "최대 재시도 횟수",
           "dump_time": "패킷 덤프 시간 (초, 0=비활성화)",
           "log_to_file": "파일 로깅 활성화",
-          "capabilities": "활성화할 장치 타입"
+          "logging_device_types": "로깅할 장치 타입"
         }
       },
       "socket": {
@@ -30,7 +30,7 @@
           "max_retry": "최대 재시도 횟수",
           "dump_time": "패킷 덤프 시간 (초, 0=비활성화)",
           "log_to_file": "파일 로깅 활성화",
-          "capabilities": "활성화할 장치 타입"
+          "logging_device_types": "로깅할 장치 타입"
         }
       },
       "mqtt": {
@@ -47,7 +47,7 @@
           "mqtt_command_suffix": "명령 토픽 접미사",
           "mqtt_qos": "QoS 레벨 (0-2)",
           "log_to_file": "파일 로깅 활성화",
-          "capabilities": "활성화할 장치 타입"
+          "logging_device_types": "로깅할 장치 타입"
         }
       }
     },
@@ -72,13 +72,13 @@
           "mqtt_command_suffix": "MQTT 명령 토픽 접미사",
           "mqtt_qos": "MQTT QoS 레벨 (0-2)",
           "log_to_file": "파일 로깅 활성화",
-          "capabilities": "활성화할 장치 타입"
+          "logging_device_types": "로깅할 장치 타입"
         }
       }
     }
   },
   "selector": {
-    "capabilities": {
+    "logging_device_types": {
       "options": {
         "light": "조명",
         "plug": "스마트플러그",
@@ -87,7 +87,8 @@
         "gas": "가스밸브",
         "energy": "에너지 모니터링",
         "elevator": "엘리베이터 제어",
-        "doorbell": "도어벨 시스템"
+        "doorbell": "도어벨 시스템",
+        "unknown": "알 수 없는 장치"
       }
     }
   }

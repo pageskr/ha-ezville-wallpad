@@ -19,6 +19,11 @@ from .const import (
     ACK_HEADER,
     DEFAULT_MAX_RETRY,
     DEFAULT_MQTT_QOS,
+    log_debug,
+    log_info,
+    log_warning,
+    log_error,
+    log_system,
 )
 
 # Configure logger name to be shorter
@@ -83,16 +88,16 @@ class EzvilleRS485Client:
                 if isinstance(code, dict) and "ack" in code:
                     self._ack_map[code["id"]][code["cmd"]] = code["ack"]
         
-        _LOGGER.debug("Initialized RS485 client with %s connection", connection_type)
+        log_system(_LOGGER, "Initialized RS485 client with %s connection", connection_type)
 
     async def async_connect(self):
         """Connect to the device asynchronously."""
         if self._running:
-            _LOGGER.debug("Client already running")
+            log_system(_LOGGER, "Client already running")
             return
 
         try:
-            _LOGGER.info("Connecting via %s", self.connection_type)
+            log_system(_LOGGER, "Connecting via %s", self.connection_type)
             
             # Use executor for blocking operations
             loop = asyncio.get_event_loop()
@@ -976,31 +981,31 @@ class EzvilleRS485Client:
         # Check if new device/signature
         if device_key not in self._discovered_devices:
             self._discovered_devices.add(device_key)
-            _LOGGER.info("=> NEW UNKNOWN DEVICE discovered: %s (signature: %s)", device_key, signature)
+            log_info(_LOGGER, "unknown", "=> NEW UNKNOWN DEVICE discovered: %s (signature: %s)", device_key, signature)
             
             # Call discovery callbacks with signature as device_id
             for callback in self._device_discovery_callbacks:
                 try:
                     callback(device_type, signature)
                 except Exception as err:
-                    _LOGGER.error("Error in discovery callback: %s", err)
+                    log_error(_LOGGER, "unknown", "Error in discovery callback: %s", err)
         
         # Update state
         old_full_state = self._device_states.get(device_key, {}).copy()
         self._device_states[device_key] = state
         
         # Log actual update
-        _LOGGER.info("=> Update state: Unknown %s, entity_key: %s, old_state: %s, new_state: %s",
+        log_info(_LOGGER, "unknown", "=> Update state: Unknown %s, entity_key: %s, old_state: %s, new_state: %s",
                    signature, device_key, old_full_state, state)
         
         # Call callback if registered with signature as device_id
         if "unknown" in self._callbacks:
-            _LOGGER.debug("=> Calling callback for unknown with key=%s, state=%s", 
+            log_debug(_LOGGER, "unknown", "=> Calling callback for unknown with key=%s, state=%s", 
                          signature, state)
             self._callbacks["unknown"](device_type, signature, state)
-            _LOGGER.debug("=> Callback completed for %s", device_key)
+            log_debug(_LOGGER, "unknown", "=> Callback completed for %s", device_key)
         
-        _LOGGER.debug("=> Unknown device %s updated with state: %s", device_key, state)
+        log_debug(_LOGGER, "unknown", "=> Unknown device %s updated with state: %s", device_key, state)
 
     def _parse_state(self, device_type: str, packet: bytes) -> Optional[Dict[str, Any]]:
         """Parse state packet based on device type."""
@@ -1030,7 +1035,19 @@ class EzvilleRS485Client:
                 if len(packet) > 12:
                     usage_hex = packet[10:13].hex()
                     state["usage"] = int(usage_hex) * 0.1 if usage_hex.isdigit() else 0
-                _LOGGER.debug("Energy state parsed: %s", state)
+                
+                # Current power reading from packet hex position 12:18
+                # Convert to power value in W (hex value / 100)
+                if len(packet) > 9:
+                    # Extract bytes from positions 6-8 (3 bytes)
+                    current_power_hex = packet.hex()[12:18]
+                    try:
+                        current_power_value = int(current_power_hex, 16) / 100.0
+                        state["current_power"] = current_power_value
+                    except:
+                        state["current_power"] = 0.0
+                        
+                log_debug(_LOGGER, "energy", "Energy state parsed: %s", state)
         
         elif device_type == "elevator":
             if len(packet) > 6:
