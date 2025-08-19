@@ -232,6 +232,12 @@ class EzvilleWallpadCoordinator(DataUpdateCoordinator):
         
         # Determine which platforms need to be loaded
         self._determine_platforms_to_load()
+        
+        # Climate platform needs to load thermostat temperature sensors
+        if "thermostat" in self.capabilities:
+            # Force sensor platform loading for thermostat temperature sensors
+            from homeassistant.const import Platform
+            self._platforms_to_load.add(Platform.SENSOR)
 
     def _determine_platforms_to_load(self):
         """Determine which platforms need to be loaded based on devices."""
@@ -324,8 +330,12 @@ class EzvilleWallpadCoordinator(DataUpdateCoordinator):
                 platforms_needed.add(Platform.SWITCH)
             if Platform.SENSOR not in self._platform_loaded:
                 platforms_needed.add(Platform.SENSOR)
-        elif device_type == "thermostat" and Platform.CLIMATE not in self._platform_loaded:
-            platforms_needed.add(Platform.CLIMATE)
+        elif device_type == "thermostat":
+            if Platform.CLIMATE not in self._platform_loaded:
+                platforms_needed.add(Platform.CLIMATE)
+            # Also load sensor platform for temperature sensors
+            if Platform.SENSOR not in self._platform_loaded:
+                platforms_needed.add(Platform.SENSOR)
         elif device_type == "fan" and Platform.FAN not in self._platform_loaded:
             platforms_needed.add(Platform.FAN)
         elif device_type == "gas" and Platform.VALVE not in self._platform_loaded:

@@ -8,7 +8,7 @@ from homeassistant.components.sensor import (
     SensorStateClass,
 )
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import UnitOfPower, UnitOfEnergy
+from homeassistant.const import UnitOfPower, UnitOfEnergy, UnitOfTemperature
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
@@ -45,14 +45,25 @@ async def async_setup_entry(
         
         # Add energy monitor sensors
         if device_info["device_type"] == "energy":
-            if f"{device_key}_energy" not in added_devices:
-                added_devices.add(f"{device_key}_energy")
-                entities.append(EzvilleEnergySensor(coordinator, device_key, device_info))
-                log_info(_LOGGER, "energy", "Added energy sensor for %s", device_key)
-            if f"{device_key}_current_power" not in added_devices:
-                added_devices.add(f"{device_key}_current_power")
+            if f"{device_key}_meter" not in added_devices:
+                added_devices.add(f"{device_key}_meter")
+                entities.append(EzvilleEnergyMeterSensor(coordinator, device_key, device_info))
+                log_info(_LOGGER, "energy", "Added energy meter sensor for %s", device_key)
+            if f"{device_key}_power" not in added_devices:
+                added_devices.add(f"{device_key}_power")
                 entities.append(EzvilleEnergyPowerSensor(coordinator, device_key, device_info))
                 log_info(_LOGGER, "energy", "Added energy power sensor for %s", device_key)
+        
+        # Add thermostat temperature sensors
+        if device_info["device_type"] == "thermostat":
+            if f"{device_key}_current_temp" not in added_devices:
+                added_devices.add(f"{device_key}_current_temp")
+                entities.append(EzvilleThermostatCurrentSensor(coordinator, device_key, device_info))
+                _LOGGER.info("Added thermostat current temperature sensor for %s", device_key)
+            if f"{device_key}_target_temp" not in added_devices:
+                added_devices.add(f"{device_key}_target_temp")
+                entities.append(EzvilleThermostatTargetSensor(coordinator, device_key, device_info))
+                _LOGGER.info("Added thermostat target temperature sensor for %s", device_key)
         
         # Add unknown device sensor
         if device_info["device_type"] == "unknown" and f"{device_key}_unknown" not in added_devices:
@@ -65,7 +76,7 @@ async def async_setup_entry(
     
     # Add existing devices
     for device_key, device_info in coordinator.devices.items():
-        if device_info["device_type"] in ["plug", "energy", "unknown"]:
+        if device_info["device_type"] in ["plug", "energy", "thermostat", "unknown"]:
             async_add_sensors(device_key, device_info)
     
     # Register callback for new devices
@@ -73,7 +84,7 @@ async def async_setup_entry(
     def device_added():
         """Handle new device added."""
         for device_key, device_info in coordinator.devices.items():
-            if device_info["device_type"] in ["plug", "energy", "unknown"]:
+            if device_info["device_type"] in ["plug", "energy", "thermostat", "unknown"]:
                 async_add_sensors(device_key, device_info)
     
     # Listen for coordinator updates
@@ -159,8 +170,8 @@ class EzvillePowerSensor(CoordinatorEntity, SensorEntity):
         _LOGGER.debug("Power sensor %s removed from hass", self._attr_name)
 
 
-class EzvilleEnergySensor(CoordinatorEntity, SensorEntity):
-    """Ezville Wallpad energy monitor sensor."""
+class EzvilleEnergyMeterSensor(CoordinatorEntity, SensorEntity):
+    """Ezville Wallpad energy meter sensor."""
 
     def __init__(
         self,
@@ -172,7 +183,7 @@ class EzvilleEnergySensor(CoordinatorEntity, SensorEntity):
         super().__init__(coordinator)
         self._device_key = device_key
         self._device_info = device_info
-        self._attr_unique_id = f"{DOMAIN}_{device_key}_energy"
+        self._attr_unique_id = f"{DOMAIN}_{device_key}_meter"
         self._attr_name = "Energy Meter"
         self._attr_device_class = SensorDeviceClass.ENERGY
         self._attr_state_class = SensorStateClass.TOTAL_INCREASING
@@ -238,7 +249,7 @@ class EzvilleEnergyPowerSensor(CoordinatorEntity, SensorEntity):
         super().__init__(coordinator)
         self._device_key = device_key
         self._device_info = device_info
-        self._attr_unique_id = f"{DOMAIN}_{device_key}_current_power"
+        self._attr_unique_id = f"{DOMAIN}_{device_key}_power"
         self._attr_name = "Energy Power"
         self._attr_device_class = SensorDeviceClass.POWER
         self._attr_state_class = SensorStateClass.MEASUREMENT
@@ -254,7 +265,7 @@ class EzvilleEnergyPowerSensor(CoordinatorEntity, SensorEntity):
         """Return the state of the sensor."""
         device = self.coordinator.devices.get(self._device_key, {})
         state = device.get("state", {})
-        return state.get("current_power", 0)
+        return state.get("power", 0)
 
     @property
     def available(self) -> bool:
@@ -288,6 +299,156 @@ class EzvilleEnergyPowerSensor(CoordinatorEntity, SensorEntity):
             self._handle_coordinator_update
         )
         log_debug(_LOGGER, "energy", "Energy power sensor %s removed from hass", self._attr_name)
+
+
+class EzvilleThermostatCurrentSensor(CoordinatorEntity, SensorEntity):
+    """Ezville Wallpad thermostat current temperature sensor."""
+
+    def __init__(
+        self,
+        coordinator: EzvilleWallpadCoordinator,
+        device_key: str,
+        device_info: dict,
+    ) -> None:
+        """Initialize the sensor."""
+        super().__init__(coordinator)
+        self._device_key = device_key
+        self._device_info = device_info
+        self._attr_unique_id = f"{DOMAIN}_{device_key}_current_temp"
+        
+        # Extract room number for naming
+        parts = device_key.split("_")
+        if len(parts) >= 2:
+            room_num = parts[1]
+            self._attr_name = f"Thermostat {room_num} Current"
+        else:
+            self._attr_name = f"{device_info.get('name', 'Thermostat')} Current"
+        
+        self._attr_device_class = SensorDeviceClass.TEMPERATURE
+        self._attr_state_class = SensorStateClass.MEASUREMENT
+        self._attr_native_unit_of_measurement = UnitOfTemperature.CELSIUS
+        
+        # Device info - use single thermostat grouping
+        from .device import EzvilleWallpadDevice
+        base_device = EzvilleWallpadDevice(coordinator, device_key, self._attr_unique_id, self._attr_name)
+        self._attr_device_info = base_device.device_info
+        
+        _LOGGER.debug("Initialized thermostat current temperature sensor: %s", self._attr_name)
+
+    @property
+    def native_value(self) -> Optional[float]:
+        """Return the state of the sensor."""
+        device = self.coordinator.devices.get(self._device_key, {})
+        state = device.get("state", {})
+        return state.get("current_temperature", 0)
+
+    @property
+    def available(self) -> bool:
+        """Return if entity is available."""
+        return self._device_key in self.coordinator.devices
+
+    def _handle_coordinator_update(self) -> None:
+        """Handle updated data from the coordinator."""
+        # Schedule update safely from any thread
+        if hasattr(self, 'hass') and self.hass:
+            self.hass.loop.call_soon_threadsafe(self.async_write_ha_state)
+        else:
+            _LOGGER.debug("===> Cannot update state for %s - hass not available", self._attr_name)
+
+    async def async_added_to_hass(self) -> None:
+        """When entity is added to hass."""
+        await super().async_added_to_hass()
+        # Register for direct updates
+        self.coordinator.register_entity_callback(
+            self._device_key,
+            self._handle_coordinator_update
+        )
+        _LOGGER.debug("Thermostat current temperature sensor %s added to hass", self._attr_name)
+
+    async def async_will_remove_from_hass(self) -> None:
+        """When entity will be removed from hass."""
+        await super().async_will_remove_from_hass()
+        # Unregister callback
+        self.coordinator.unregister_entity_callback(
+            self._device_key,
+            self._handle_coordinator_update
+        )
+        _LOGGER.debug("Thermostat current temperature sensor %s removed from hass", self._attr_name)
+
+
+class EzvilleThermostatTargetSensor(CoordinatorEntity, SensorEntity):
+    """Ezville Wallpad thermostat target temperature sensor."""
+
+    def __init__(
+        self,
+        coordinator: EzvilleWallpadCoordinator,
+        device_key: str,
+        device_info: dict,
+    ) -> None:
+        """Initialize the sensor."""
+        super().__init__(coordinator)
+        self._device_key = device_key
+        self._device_info = device_info
+        self._attr_unique_id = f"{DOMAIN}_{device_key}_target_temp"
+        
+        # Extract room number for naming
+        parts = device_key.split("_")
+        if len(parts) >= 2:
+            room_num = parts[1]
+            self._attr_name = f"Thermostat {room_num} Target"
+        else:
+            self._attr_name = f"{device_info.get('name', 'Thermostat')} Target"
+        
+        self._attr_device_class = SensorDeviceClass.TEMPERATURE
+        self._attr_state_class = SensorStateClass.MEASUREMENT
+        self._attr_native_unit_of_measurement = UnitOfTemperature.CELSIUS
+        
+        # Device info - use single thermostat grouping
+        from .device import EzvilleWallpadDevice
+        base_device = EzvilleWallpadDevice(coordinator, device_key, self._attr_unique_id, self._attr_name)
+        self._attr_device_info = base_device.device_info
+        
+        _LOGGER.debug("Initialized thermostat target temperature sensor: %s", self._attr_name)
+
+    @property
+    def native_value(self) -> Optional[float]:
+        """Return the state of the sensor."""
+        device = self.coordinator.devices.get(self._device_key, {})
+        state = device.get("state", {})
+        return state.get("target_temperature", 0)
+
+    @property
+    def available(self) -> bool:
+        """Return if entity is available."""
+        return self._device_key in self.coordinator.devices
+
+    def _handle_coordinator_update(self) -> None:
+        """Handle updated data from the coordinator."""
+        # Schedule update safely from any thread
+        if hasattr(self, 'hass') and self.hass:
+            self.hass.loop.call_soon_threadsafe(self.async_write_ha_state)
+        else:
+            _LOGGER.debug("===> Cannot update state for %s - hass not available", self._attr_name)
+
+    async def async_added_to_hass(self) -> None:
+        """When entity is added to hass."""
+        await super().async_added_to_hass()
+        # Register for direct updates
+        self.coordinator.register_entity_callback(
+            self._device_key,
+            self._handle_coordinator_update
+        )
+        _LOGGER.debug("Thermostat target temperature sensor %s added to hass", self._attr_name)
+
+    async def async_will_remove_from_hass(self) -> None:
+        """When entity will be removed from hass."""
+        await super().async_will_remove_from_hass()
+        # Unregister callback
+        self.coordinator.unregister_entity_callback(
+            self._device_key,
+            self._handle_coordinator_update
+        )
+        _LOGGER.debug("Thermostat target temperature sensor %s removed from hass", self._attr_name)
 
 
 class EzvilleUnknownSensor(CoordinatorEntity, SensorEntity):

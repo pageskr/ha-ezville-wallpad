@@ -72,8 +72,12 @@ class EzvilleFan(CoordinatorEntity, FanEntity):
         self._attr_supported_features = (
             FanEntityFeature.SET_SPEED |
             FanEntityFeature.TURN_ON |
-            FanEntityFeature.TURN_OFF
+            FanEntityFeature.TURN_OFF |
+            FanEntityFeature.PRESET_MODE
         )
+        
+        # Preset modes
+        self._attr_preset_modes = ["bypass", "heat"]
         
         # Device info는 base class에서 처리하도록 함
         self._attr_device_info = coordinator.get_device_info(device_key)
@@ -101,6 +105,17 @@ class EzvilleFan(CoordinatorEntity, FanEntity):
     def speed_count(self) -> int:
         """Return the number of speeds the fan supports."""
         return SPEED_RANGE[1]
+    
+    @property
+    def preset_mode(self) -> Optional[str]:
+        """Return the current preset mode."""
+        device = self.coordinator.devices.get(self._device_key, {})
+        state = device.get("state", {})
+        mode = state.get("mode", "bypass")
+        # Ensure the mode is in our supported list
+        if mode in self._attr_preset_modes:
+            return mode
+        return "bypass"
 
     async def async_turn_on(
         self,
@@ -119,6 +134,10 @@ class EzvilleFan(CoordinatorEntity, FanEntity):
         # Set speed if specified
         if percentage is not None:
             await self.async_set_percentage(percentage)
+            
+        # Set preset mode if specified
+        if preset_mode is not None:
+            await self.async_set_preset_mode(preset_mode)
         
         # Update local state immediately
         if self._device_key in self.coordinator.devices:
@@ -161,6 +180,24 @@ class EzvilleFan(CoordinatorEntity, FanEntity):
             self.coordinator.devices[self._device_key]["state"]["speed"] = speed
             if not self.is_on:
                 self.coordinator.devices[self._device_key]["state"]["power"] = True
+        
+        self.async_write_ha_state()
+    
+    async def async_set_preset_mode(self, preset_mode: str) -> None:
+        """Set new preset mode."""
+        if preset_mode not in self._attr_preset_modes:
+            return
+            
+        await self.coordinator.send_command(
+            "fan",
+            self._device_info["device_id"],
+            "mode",
+            preset_mode
+        )
+        
+        # Update local state immediately
+        if self._device_key in self.coordinator.devices:
+            self.coordinator.devices[self._device_key]["state"]["mode"] = preset_mode
         
         self.async_write_ha_state()
 
