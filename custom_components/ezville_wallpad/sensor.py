@@ -143,6 +143,10 @@ class EzvillePowerSensor(CoordinatorEntity, SensorEntity):
 
     def _handle_coordinator_update(self) -> None:
         """Handle updated data from the coordinator."""
+        # Update last detected time
+        import time
+        self._last_detected = time.time()
+        
         # Schedule update safely from any thread
         if hasattr(self, 'hass') and self.hass:
             self.hass.loop.call_soon_threadsafe(self.async_write_ha_state)
@@ -474,6 +478,11 @@ class EzvilleUnknownSensor(CoordinatorEntity, SensorEntity):
         # Device info from coordinator
         self._attr_device_info = coordinator.get_device_info(device_key)
         
+        # Add timestamp attributes
+        import time
+        self._first_detected = time.time()
+        self._last_detected = time.time()
+        
         _LOGGER.debug("Initialized unknown device sensor: %s", self._attr_name)
 
     @property
@@ -490,11 +499,17 @@ class EzvilleUnknownSensor(CoordinatorEntity, SensorEntity):
         device = self.coordinator.devices.get(self._device_key, {})
         state = device.get("state", {})
         
+        import time
+        from datetime import datetime
+        
         attributes = {
             "device_id": state.get("device_id", "Unknown"),
             "device_num": state.get("device_num", 0),
             "command": state.get("command", "Unknown"),
-            "raw_data": state.get("raw_data", "No data")
+            "raw_data": state.get("raw_data", "No data"),
+            "signature": state.get("signature", "Unknown"),
+            "first_detected": datetime.fromtimestamp(self._first_detected).isoformat(),
+            "last_detected": datetime.fromtimestamp(self._last_detected).isoformat()
         }
         
         return attributes

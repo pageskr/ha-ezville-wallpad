@@ -49,6 +49,36 @@ async def async_setup_entry(
     if entities:
         async_add_entities(entities)
         _LOGGER.info("Added %d climate entities", len(entities))
+    
+    # Track added devices
+    added_devices = set()
+    for entity in entities:
+        added_devices.add(entity._device_key)
+    
+    @callback
+    def async_add_thermostats(device_key: str, device_info: dict):
+        """Add new thermostat entities."""
+        if device_info["device_type"] == "thermostat" and device_key not in added_devices:
+            added_devices.add(device_key)
+            entity = EzvilleThermostat(coordinator, device_key, device_info)
+            async_add_entities([entity])
+            _LOGGER.info("Added new thermostat entity: %s", device_key)
+    
+    # Add existing devices that weren't added yet
+    for device_key, device_info in coordinator.devices.items():
+        if device_info["device_type"] == "thermostat":
+            async_add_thermostats(device_key, device_info)
+    
+    # Register callback for new devices
+    @callback
+    def device_added():
+        """Handle new device added."""
+        for device_key, device_info in coordinator.devices.items():
+            if device_info["device_type"] == "thermostat":
+                async_add_thermostats(device_key, device_info)
+    
+    # Listen for coordinator updates
+    coordinator.async_add_listener(device_added)
 
 
 class EzvilleThermostat(CoordinatorEntity, ClimateEntity):

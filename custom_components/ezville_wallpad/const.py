@@ -6,35 +6,68 @@ MODEL = "Ezville Wallpad"
 DOCUMENTATION_URL = "https://github.com/pageskr/ha-ezville-wallpad"
 
 # Logging helper
+def _should_log_device(device_type):
+    """Check if logging is enabled for this device type."""
+    from . import LOGGING_ENABLED, LOGGING_DEVICE_TYPES
+    if not LOGGING_ENABLED:
+        return False
+    return device_type in LOGGING_DEVICE_TYPES
+
+def get_device_type_from_packet(packet):
+    """Get device type from packet for logging."""
+    if not packet or len(packet) < 2:
+        return "unknown"
+    
+    device_id = packet[1]
+    
+    # Check packet prefix (first 2 bytes)
+    prefix = packet[:2].hex().upper()
+    
+    if prefix.startswith("F70E"):
+        return "light"
+    elif prefix.startswith("F739"):
+        return "plug"
+    elif prefix.startswith("F736"):
+        return "thermostat"
+    elif prefix.startswith("F732"):
+        return "fan"
+    elif prefix.startswith("F712"):
+        return "gas"
+    elif prefix.startswith("F730"):
+        return "energy"
+    elif prefix.startswith("F733"):
+        return "elevator"
+    elif prefix.startswith("F740"):
+        return "doorbell"
+    else:
+        return "unknown"
+
 def log_debug(logger, device_type, message, *args):
     """Log debug message if logging is enabled for the device type."""
-    from . import LOGGING_ENABLED, LOGGING_DEVICE_TYPES
-    if LOGGING_ENABLED and device_type in LOGGING_DEVICE_TYPES:
+    if _should_log_device(device_type):
         logger.debug(message, *args)
 
 def log_info(logger, device_type, message, *args):
     """Log info message if logging is enabled for the device type."""
-    from . import LOGGING_ENABLED, LOGGING_DEVICE_TYPES
-    if LOGGING_ENABLED and device_type in LOGGING_DEVICE_TYPES:
+    if _should_log_device(device_type):
         logger.info(message, *args)
 
 def log_warning(logger, device_type, message, *args):
     """Log warning message if logging is enabled for the device type."""
-    from . import LOGGING_ENABLED, LOGGING_DEVICE_TYPES
-    if LOGGING_ENABLED and device_type in LOGGING_DEVICE_TYPES:
+    if _should_log_device(device_type):
         logger.warning(message, *args)
 
 def log_error(logger, device_type, message, *args):
     """Log error message if logging is enabled for the device type."""
-    from . import LOGGING_ENABLED, LOGGING_DEVICE_TYPES
-    if LOGGING_ENABLED and device_type in LOGGING_DEVICE_TYPES:
+    if _should_log_device(device_type):
         logger.error(message, *args)
 
 def log_system(logger, message, *args):
     """Log system message if general logging is enabled."""
     from . import LOGGING_ENABLED
-    if LOGGING_ENABLED:
-        logger.info(message, *args)
+    if not LOGGING_ENABLED:
+        return
+    logger.info(message, *args)
 
 # Configuration keys
 CONF_SERIAL_PORT = "serial_port"

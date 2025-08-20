@@ -129,6 +129,16 @@ class EzvilleWallpadCoordinator(DataUpdateCoordinator):
         _LOGGER.debug("Registered callback for unknown devices")
         
         # Unknown devices will be created dynamically when discovered
+        
+        # Create a default unknown device to group all unknown components
+        if "unknown" not in self.devices:
+            self.devices["unknown"] = {
+                "device_type": "unknown",
+                "device_id": "system",
+                "name": "Unknown",
+                "state": {}
+            }
+            _LOGGER.debug("Created default unknown device")
 
     def _initialize_default_devices(self):
         """Initialize default devices for enabled capabilities."""
