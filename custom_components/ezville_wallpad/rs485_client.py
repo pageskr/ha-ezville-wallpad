@@ -327,13 +327,13 @@ class EzvilleRS485Client:
             # Check if this is a new or changed packet
             if signature not in self._previous_mqtt_values or self._previous_mqtt_values[signature] != msg:
                 hex_msg = ' '.join([f"{b:02x}" for b in msg])
-                _LOGGER.info("Converted hex message: %s", hex_msg)
+                log_info(_LOGGER, "unknown", "Converted hex message: %s", hex_msg)
                 
                 # Check if value has changed
                 if signature in self._previous_mqtt_values:
-                    _LOGGER.info("Updated signature %s: %s", signature, ' '.join([f"{b:02x}" for b in msg[4:]]))
+                    log_info(_LOGGER, "unknown", "Updated signature %s: %s", signature, ' '.join([f"{b:02x}" for b in msg[4:]]))
                 else:
-                    _LOGGER.info("Created signature %s: %s", signature, ' '.join([f"{b:02x}" for b in msg[4:]]))
+                    log_info(_LOGGER, "unknown", "Created signature %s: %s", signature, ' '.join([f"{b:02x}" for b in msg[4:]]))
                 
                 self._previous_mqtt_values[signature] = msg
                 
@@ -576,11 +576,11 @@ class EzvilleRS485Client:
                                     
                                     # Call callback
                                     if device_type in self._callbacks:
-                                        _LOGGER.debug("=> Calling callback for %s with key=%s, state=%s", 
+                                        log_debug(_LOGGER, device_type, "=> Calling callback for %s with key=%s, state=%s", 
                                                      device_type, f"{room_id}_{light_num}", individual_state)
                                         self._callbacks[device_type](device_type, f"{room_id}_{light_num}", 
                                                                    individual_state)
-                                        _LOGGER.debug("=> Callback completed for %s", device_key)
+                                        log_debug(_LOGGER, device_type, "=> Callback completed for %s", device_key)
                     
                     elif device_type == "plug":
                         # Extract room number from upper 4 bits
@@ -655,11 +655,11 @@ class EzvilleRS485Client:
                                     
                                     # Call callback
                                     if device_type in self._callbacks:
-                                        _LOGGER.debug("=> Calling callback for %s with key=%s, state=%s", 
+                                        log_debug(_LOGGER, device_type, "=> Calling callback for %s with key=%s, state=%s", 
                                                      device_type, f"{room_id}_{plug_num}", individual_state)
                                         self._callbacks[device_type](device_type, f"{room_id}_{plug_num}", 
                                                                    individual_state)
-                                        _LOGGER.debug("=> Callback completed for %s", device_key)
+                                        log_debug(_LOGGER, device_type, "=> Callback completed for %s", device_key)
                     
                     elif device_type == "thermostat":
                         # Extract room number from upper 4 bits
@@ -747,10 +747,10 @@ class EzvilleRS485Client:
                                         self._device_states[device_key] = individual_state
                                         
                                         if device_type in self._callbacks:
-                                            _LOGGER.debug("=> Calling callback for %s with key=%s, state=%s", 
+                                            log_debug(_LOGGER, device_type, "=> Calling callback for %s with key=%s, state=%s", 
                                                          device_type, thermostat_room, individual_state)
                                             self._callbacks[device_type](device_type, thermostat_room, individual_state)
-                                            _LOGGER.debug("=> Callback completed for %s", device_key)
+                                            log_debug(_LOGGER, device_type, "=> Callback completed for %s", device_key)
                                         
                             else:
                                 # Standard thermostat packet format
@@ -814,10 +814,10 @@ class EzvilleRS485Client:
                                     self._device_states[device_key] = individual_state
                                     
                                     if device_type in self._callbacks:
-                                        _LOGGER.debug("=> Calling callback for %s with key=%s, state=%s", 
+                                        log_debug(_LOGGER, device_type, "=> Calling callback for %s with key=%s, state=%s", 
                                                      device_type, thermostat_room, individual_state)
                                         self._callbacks[device_type](device_type, thermostat_room, individual_state)
-                                        _LOGGER.debug("=> Callback completed for %s", device_key)
+                                        log_debug(_LOGGER, device_type, "=> Callback completed for %s", device_key)
                     
                 elif state_data:  # Other device types that return state_data
                     # Other device types (fan, gas, energy, elevator, doorbell) - single devices
@@ -857,10 +857,10 @@ class EzvilleRS485Client:
                     
                     # Call callback
                     if device_type in self._callbacks:
-                        _LOGGER.debug("=> Calling callback for %s with key=None, state=%s", 
+                        log_debug(_LOGGER, device_type, "=> Calling callback for %s with key=None, state=%s", 
                                      device_type, state_data)
                         self._callbacks[device_type](device_type, None, state_data)
-                        _LOGGER.debug("=> Callback completed for %s", device_key)
+                        log_debug(_LOGGER, device_type, "=> Callback completed for %s", device_key)
                 
                 return
             else:
@@ -909,7 +909,7 @@ class EzvilleRS485Client:
             return
         
         # Unknown packet - handle it
-        _LOGGER.warning("Unknown packet: %s | Device: 0x%02X | Num: 0x%02X (dec: %d) | Cmd: 0x%02X | State headers: %s | ACK headers: %s",
+        log_info(_LOGGER, "unknown", "Unknown packet: %s | Device: 0x%02X | Num: 0x%02X (dec: %d) | Cmd: 0x%02X | State headers: %s | ACK headers: %s",
                        packet.hex(), device_id, device_num, device_num, command,
                        ','.join([f"0x{k:02X}" for k in STATE_HEADER.keys()]),
                        ','.join([f"0x{k:02X}" for k in ACK_HEADER.keys()]))
@@ -1316,12 +1316,12 @@ class EzvilleMqtt:
                         # Remove any spaces, commas, newlines
                         hex_str = hex_str.replace(' ', '').replace(',', '').replace('\n', '').replace('\r', '')
                         data = bytes.fromhex(hex_str)
-                        log_debug(_LOGGER, "unknown", "MQTT: Received %d bytes on %s, decoded to %d bytes", 
+                        _LOGGER.debug("MQTT: Received %d bytes on %s, decoded to %d bytes", 
                                  len(msg.payload), msg.topic, len(data))
                     except:
                         # If not hex string, use raw bytes
                         data = msg.payload
-                        log_debug(_LOGGER, "unknown", "MQTT: Received %d raw bytes on %s", 
+                        _LOGGER.debug("MQTT: Received %d raw bytes on %s", 
                                  len(data), msg.topic)
                     
                     # Add data to buffer

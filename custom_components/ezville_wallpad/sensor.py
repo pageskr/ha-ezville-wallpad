@@ -193,8 +193,10 @@ class EzvilleEnergyMeterSensor(CoordinatorEntity, SensorEntity):
         self._attr_state_class = SensorStateClass.TOTAL_INCREASING
         self._attr_native_unit_of_measurement = UnitOfEnergy.KILO_WATT_HOUR
         
-        # Device info from coordinator
-        self._attr_device_info = coordinator.get_device_info(device_key)
+        # Device info - use unknown device grouping
+        from .device import EzvilleWallpadDevice
+        base_device = EzvilleWallpadDevice(coordinator, device_key, self._attr_unique_id, self._attr_name)
+        self._attr_device_info = base_device.device_info
         
         _LOGGER.debug("Initialized energy sensor: %s", self._attr_name)
 
@@ -213,6 +215,10 @@ class EzvilleEnergyMeterSensor(CoordinatorEntity, SensorEntity):
 
     def _handle_coordinator_update(self) -> None:
         """Handle updated data from the coordinator."""
+        # Update last detected time
+        import time
+        self._last_detected = time.time()
+        
         # Schedule update safely from any thread
         if hasattr(self, 'hass') and self.hass:
             self.hass.loop.call_soon_threadsafe(self.async_write_ha_state)
@@ -353,6 +359,10 @@ class EzvilleThermostatCurrentSensor(CoordinatorEntity, SensorEntity):
 
     def _handle_coordinator_update(self) -> None:
         """Handle updated data from the coordinator."""
+        # Update last detected time
+        import time
+        self._last_detected = time.time()
+        
         # Schedule update safely from any thread
         if hasattr(self, 'hass') and self.hass:
             self.hass.loop.call_soon_threadsafe(self.async_write_ha_state)

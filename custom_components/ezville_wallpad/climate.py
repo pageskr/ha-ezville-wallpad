@@ -116,12 +116,10 @@ class EzvilleThermostat(CoordinatorEntity, ClimateEntity):
         self._attr_max_temp = 40
         self._attr_target_temperature_step = 1
         
-        # HVAC modes
+        # HVAC modes - only heat and off
         self._attr_hvac_modes = [
             HVACMode.OFF,
             HVACMode.HEAT,
-            HVACMode.COOL,
-            HVACMode.AUTO,
         ]
         
         # Device info - use single thermostat grouping
@@ -150,14 +148,11 @@ class EzvilleThermostat(CoordinatorEntity, ClimateEntity):
         state = device.get("state", {})
         mode = state.get("mode", 0)
         
-        # Map device mode to HVAC mode
-        mode_map = {
-            0: HVACMode.OFF,
-            1: HVACMode.HEAT,
-            2: HVACMode.COOL,
-            3: HVACMode.AUTO,
-        }
-        return mode_map.get(mode, HVACMode.OFF)
+        # Map device mode to HVAC mode - only heat and off
+        if mode == 1:
+            return HVACMode.HEAT
+        else:
+            return HVACMode.OFF
 
     @property
     def hvac_action(self) -> Optional[HVACAction]:
@@ -198,15 +193,11 @@ class EzvilleThermostat(CoordinatorEntity, ClimateEntity):
 
     async def async_set_hvac_mode(self, hvac_mode: HVACMode) -> None:
         """Set new target hvac mode."""
-        # Map HVAC mode to device mode
-        mode_map = {
-            HVACMode.OFF: 0,
-            HVACMode.HEAT: 1,
-            HVACMode.COOL: 2,
-            HVACMode.AUTO: 3,
-        }
-        
-        device_mode = mode_map.get(hvac_mode, 0)
+        # Map HVAC mode to device mode - only heat and off
+        if hvac_mode == HVACMode.HEAT:
+            device_mode = "heat"
+        else:
+            device_mode = "off"
         
         await self.coordinator.send_command(
             "thermostat",
@@ -217,13 +208,15 @@ class EzvilleThermostat(CoordinatorEntity, ClimateEntity):
         
         # Update local state immediately
         if self._device_key in self.coordinator.devices:
-            self.coordinator.devices[self._device_key]["state"]["mode"] = device_mode
+            # Convert back to numeric mode for state
+            numeric_mode = 1 if device_mode == "heat" else 0
+            self.coordinator.devices[self._device_key]["state"]["mode"] = numeric_mode
         
         self.async_write_ha_state()
 
     async def async_turn_on(self) -> None:
         """Turn on the thermostat."""
-        await self.async_set_hvac_mode(HVACMode.AUTO)
+        await self.async_set_hvac_mode(HVACMode.HEAT)
 
     async def async_turn_off(self) -> None:
         """Turn off the thermostat."""
