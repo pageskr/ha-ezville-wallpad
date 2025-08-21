@@ -700,8 +700,8 @@ class EzvilleRS485Client:
                                 for i in range(room_count):
                                     idx = temp_start + i * 2
                                     if idx + 1 < len(packet):
-                                        # Thermostat room number is from the base room_id + index
-                                        thermostat_room = room_id + i
+                                        # Thermostat room number is just the index + 1 (1, 2, 3, 4)
+                                        thermostat_room = i + 1
                                         device_key = f"{device_type}_{thermostat_room}"
                                         # Swap target/current based on actual data pattern
                                         target_temp = packet[idx]
@@ -711,8 +711,12 @@ class EzvilleRS485Client:
                                         if current_temp > 50 and target_temp < 50:
                                             target_temp, current_temp = current_temp, target_temp
                                         
+                                        # Determine mode based on temperatures
+                                        # If target temp is 5 (min), assume it's off
+                                        mode = 0 if target_temp <= 5 else 1
+                                        
                                         individual_state = {
-                                            "mode": 1,  # Default to heat mode
+                                            "mode": mode,
                                             "away": False,
                                             "current_temperature": current_temp,
                                             "target_temperature": target_temp
@@ -725,8 +729,8 @@ class EzvilleRS485Client:
                                         
                                         if old_current != current_temp or old_target != target_temp:
                                             log_info(_LOGGER, device_type, "=> Thermostat %d - Current: %d°C → %d°C, Target: %d°C → %d°C, entity_key: %s [UPDATED]",
-                                                       thermostat_room, old_current if old_current is not None else 0, current_temp,
-                                                       old_target if old_target is not None else 0, target_temp, device_key)
+                                            thermostat_room, old_current if old_current is not None else 0, current_temp,
+                                            old_target if old_target is not None else 0, target_temp, device_key)
                                         else:
                                             log_debug(_LOGGER, device_type, "=> Thermostat %d - Current: %d°C, Target: %d°C [no change]",
                                                        thermostat_room, current_temp, target_temp)
@@ -759,7 +763,7 @@ class EzvilleRS485Client:
                                 
                                 # Process each thermostat
                                 for thermo_idx in range(0, min(room_count, 15)):
-                                    thermostat_room = room_id + thermo_idx  # Room number based on base room_id
+                                    thermostat_room = thermo_idx + 1  # Room number is just 1, 2, 3, 4, etc.
                                     device_key = f"{device_type}_{thermostat_room}"
                                     
                                     # Check if we have enough data
@@ -907,6 +911,22 @@ class EzvilleRS485Client:
         if device_id == 0x60 and command == 0x01:
             log_info(_LOGGER, "unknown", "=> Unknown device 0x60 control packet: device_num=0x%02X", device_num)
             return
+        
+        # Create signature from first 4 bytes
+        signature = packet[:4].hex()
+        
+        # Check if value has changed
+        if signature in self._previous_mqtt_values and self._previous_mqtt_values[signature] == packet:
+            # Packet hasn't changed, skip logging and processing
+            return
+        
+        # Update previous value
+        if signature in self._previous_mqtt_values:
+            log_info(_LOGGER, "unknown", "Updated signature %s: %s", signature[:8], ' '.join([f"{b:02x}" for b in packet[4:]]))
+        else:
+            log_info(_LOGGER, "unknown", "Created signature %s: %s", signature[:8], ' '.join([f"{b:02x}" for b in packet[4:]]))
+        
+        self._previous_mqtt_values[signature] = packet
         
         # Unknown packet - handle it
         log_info(_LOGGER, "unknown", "Unknown packet: %s | Device: 0x%02X | Num: 0x%02X (dec: %d) | Cmd: 0x%02X | State headers: %s | ACK headers: %s",

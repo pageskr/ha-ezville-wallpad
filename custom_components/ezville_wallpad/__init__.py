@@ -44,7 +44,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up Ezville Wallpad from a config entry."""
     # Set global logging settings
     global LOGGING_ENABLED, LOGGING_DEVICE_TYPES
-    LOGGING_ENABLED = entry.options.get("log_to_file", False)
+    LOGGING_ENABLED = entry.options.get("enable_file_logging", False)
     LOGGING_DEVICE_TYPES = entry.options.get("logging_device_types", [])
     
     if LOGGING_ENABLED:
@@ -333,11 +333,8 @@ async def async_update_options(hass: HomeAssistant, entry: ConfigEntry) -> None:
     """Handle options update."""
     # Update global logging settings
     global LOGGING_ENABLED, LOGGING_DEVICE_TYPES
-    LOGGING_ENABLED = entry.options.get("log_to_file", False)
-    LOGGING_DEVICE_TYPES = entry.options.get("logging_device_types", [
-        "light", "plug", "thermostat", "fan", "gas", 
-        "energy", "elevator", "doorbell", "unknown"
-    ])
+    LOGGING_ENABLED = entry.options.get("enable_file_logging", False)
+    LOGGING_DEVICE_TYPES = entry.options.get("logging_device_types", [])
     
     if LOGGING_ENABLED:
         _LOGGER.info("Options updated, reloading entry")

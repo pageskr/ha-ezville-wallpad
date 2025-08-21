@@ -451,18 +451,18 @@ class EzvilleWallpadCoordinator(DataUpdateCoordinator):
     def _device_update_callback(self, device_type: str, device_id: Any, state: Dict[str, Any]):
         """Handle device state updates."""
         # Get logging enabled device types from options
-        log_device_types = self.options.get("log_device_types", [])
+        log_device_types = self.options.get("logging_device_types", [])
         
-        # Check if this device type should be logged (only for debug level logs)
-        if _LOGGER.isEnabledFor(logging.DEBUG):
-            if device_type in log_device_types or "all" in log_device_types:
-                _LOGGER.debug("==> Coordinator received callback: device_type=%s, device_id=%s, state=%s",
-                             device_type, device_id, state)
+        # Check if this device type should be logged
+        should_log = device_type in log_device_types or "unknown" in log_device_types
+        if should_log:
+            log_debug(_LOGGER, device_type, "==> Coordinator received callback: device_type=%s, device_id=%s, state=%s",
+                         device_type, device_id, state)
         
         # Skip if device type not in enabled capabilities (except unknown)
         if device_type != "unknown" and device_type not in self.capabilities:
-            if device_type in log_device_types or "all" in log_device_types:
-                _LOGGER.debug("==> Skipping device_type %s (not in capabilities)", device_type)
+            if should_log:
+                log_debug(_LOGGER, device_type, "==> Skipping device_type %s (not in capabilities)", device_type)
             return
             
         # Handle different key formats based on device type
@@ -487,13 +487,13 @@ class EzvilleWallpadCoordinator(DataUpdateCoordinator):
             
             if not state_changed:
                 # No change, skip update
-                if device_type in log_device_types or "all" in log_device_types:
-                    _LOGGER.debug("==> Device %s state unchanged, skipping update", device_key)
+                if should_log:
+                    log_debug(_LOGGER, device_type, "==> Device %s state unchanged, skipping update", device_key)
                 return
         
         # Update or create device entry
         if is_new_device:
-            _LOGGER.info("==> New device detected via state update: %s", device_key)
+            log_info(_LOGGER, device_type, "==> New device detected via state update: %s", device_key)
             
             # Parse device ID to get display name
             if device_type in ["light", "plug"] and isinstance(device_id, str) and "_" in device_id:
@@ -519,11 +519,11 @@ class EzvilleWallpadCoordinator(DataUpdateCoordinator):
         else:
             old_device_state = self.devices[device_key].get("state", {}).copy()
             self.devices[device_key]["state"] = state
-            if device_type in log_device_types or "all" in log_device_types:
-                _LOGGER.debug("==> Device %s state updated from %s to %s", device_key, old_device_state, state)
+            if should_log:
+                log_debug(_LOGGER, device_type, "==> Device %s state updated from %s to %s", device_key, old_device_state, state)
         
-        if device_type in log_device_types or "all" in log_device_types:
-            _LOGGER.debug("==> Device %s current full info: %s", device_key, self.devices.get(device_key))
+        if should_log:
+            log_debug(_LOGGER, device_type, "==> Device %s current full info: %s", device_key, self.devices.get(device_key))
         
         # Trigger coordinator update - schedule in event loop if called from thread
         if threading.current_thread() is threading.main_thread():
@@ -535,22 +535,22 @@ class EzvilleWallpadCoordinator(DataUpdateCoordinator):
         
         # Call entity callbacks if registered (only if state changed or new device)
         if device_key in self._entity_callbacks:
-            if device_type in log_device_types or "all" in log_device_types:
-                _LOGGER.debug("==> Found %d entity callbacks for device_key %s", 
+            if should_log:
+                log_debug(_LOGGER, device_type, "==> Found %d entity callbacks for device_key %s", 
                              len(self._entity_callbacks[device_key]), device_key)
             for idx, callback in enumerate(self._entity_callbacks[device_key]):
                 # Call callbacks safely from any thread
                 try:
-                    if device_type in log_device_types or "all" in log_device_types:
-                        _LOGGER.debug("==> Calling entity callback [%d] for %s", idx, device_key)
+                    if should_log:
+                        log_debug(_LOGGER, device_type, "==> Calling entity callback [%d] for %s", idx, device_key)
                     callback()
-                    if device_type in log_device_types or "all" in log_device_types:
-                        _LOGGER.debug("==> Entity callback [%d] completed for %s", idx, device_key)
+                    if should_log:
+                        log_debug(_LOGGER, device_type, "==> Entity callback [%d] completed for %s", idx, device_key)
                 except Exception as err:
-                    _LOGGER.error("==> Error in entity callback [%d] for %s: %s", idx, device_key, err)
+                    log_error(_LOGGER, device_type, "==> Error in entity callback [%d] for %s: %s", idx, device_key, err)
         else:
-            if device_type in log_device_types or "all" in log_device_types:
-                _LOGGER.debug("==> No entity callbacks registered for device_key %s", device_key)
+            if should_log:
+                log_debug(_LOGGER, device_type, "==> No entity callbacks registered for device_key %s", device_key)
 
     def register_entity_callback(self, device_key: str, callback: Callable):
         """Register a callback for entity updates."""

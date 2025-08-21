@@ -8,10 +8,15 @@ DOCUMENTATION_URL = "https://github.com/pageskr/ha-ezville-wallpad"
 # Logging helper
 def _should_log_device(device_type):
     """Check if logging is enabled for this device type."""
-    from . import LOGGING_ENABLED, LOGGING_DEVICE_TYPES
-    if not LOGGING_ENABLED:
+    try:
+        from . import LOGGING_ENABLED, LOGGING_DEVICE_TYPES
+        if not LOGGING_ENABLED:
+            return False
+        # Check if device type or 'unknown' is in the list for unknown devices
+        return device_type in LOGGING_DEVICE_TYPES or (device_type == "unknown" and "unknown" in LOGGING_DEVICE_TYPES)
+    except:
+        # If import fails, assume logging is disabled
         return False
-    return device_type in LOGGING_DEVICE_TYPES
 
 def get_device_type_from_packet(packet):
     """Get device type from packet for logging."""

@@ -113,7 +113,7 @@ class EzvilleWallpadConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                         "scan_interval": user_input.get("scan_interval", DEFAULT_SCAN_INTERVAL),
                         "max_retry": user_input.get("max_retry", DEFAULT_MAX_RETRY),
                         "dump_time": user_input.get("dump_time", 0),
-                        "log_to_file": user_input.get("log_to_file", False),
+                        "enable_file_logging": user_input.get("enable_file_logging", False),
                         "logging_device_types": user_input.get("logging_device_types", [
                             "light", "plug", "thermostat", "fan", "gas", 
                             "energy", "elevator", "doorbell", "unknown"
@@ -140,7 +140,7 @@ class EzvilleWallpadConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             vol.Optional("dump_time", default=0): vol.All(
                 vol.Coerce(int), vol.Range(min=0, max=60)
             ),
-            vol.Optional("log_to_file", default=False): bool,
+            vol.Optional("enable_file_logging", default=False): bool,
             vol.Optional("logging_device_types", default=[
                 "light", "plug", "thermostat", "fan", "gas", 
                 "energy", "elevator", "doorbell", "unknown"
@@ -192,7 +192,7 @@ class EzvilleWallpadConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                         "scan_interval": user_input.get("scan_interval", DEFAULT_SCAN_INTERVAL),
                         "max_retry": user_input.get("max_retry", DEFAULT_MAX_RETRY),
                         "dump_time": user_input.get("dump_time", 0),
-                        "log_to_file": user_input.get("log_to_file", False),
+                        "enable_file_logging": user_input.get("enable_file_logging", False),
                         "logging_device_types": user_input.get("logging_device_types", [
                             "light", "plug", "thermostat", "fan", "gas", 
                             "energy", "elevator", "doorbell", "unknown"
@@ -220,7 +220,7 @@ class EzvilleWallpadConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             vol.Optional("dump_time", default=0): vol.All(
                 vol.Coerce(int), vol.Range(min=0, max=60)
             ),
-            vol.Optional("log_to_file", default=False): bool,
+            vol.Optional("enable_file_logging", default=False): bool,
             vol.Optional("logging_device_types", default=[
                 "light", "plug", "thermostat", "fan", "gas", 
                 "energy", "elevator", "doorbell", "unknown"
@@ -290,7 +290,7 @@ class EzvilleWallpadConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                         CONF_MQTT_QOS: qos,
                     },
                     options={
-                        "log_to_file": user_input.get("log_to_file", False),
+                        "enable_file_logging": user_input.get("enable_file_logging", False),
                         "logging_device_types": user_input.get("logging_device_types", [
                             "light", "plug", "thermostat", "fan", "gas", 
                             "energy", "elevator", "doorbell", "unknown"
@@ -318,7 +318,7 @@ class EzvilleWallpadConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             vol.Optional(CONF_MQTT_QOS, default=DEFAULT_MQTT_QOS): vol.All(
                 vol.Coerce(int), vol.Range(min=0, max=2)
             ),
-            vol.Optional("log_to_file", default=False): bool,
+            vol.Optional("enable_file_logging", default=False): bool,
             vol.Optional("logging_device_types", default=[
                 "light", "plug", "thermostat", "fan", "gas", 
                 "energy", "elevator", "doorbell", "unknown"
@@ -385,8 +385,8 @@ class EzvilleWallpadOptionsFlowHandler(config_entries.OptionsFlow):
                     default=self.config_entry.data.get(CONF_MQTT_QOS, DEFAULT_MQTT_QOS),
                 ): vol.All(vol.Coerce(int), vol.Range(min=0, max=2)),
                 vol.Optional(
-                    "log_to_file",
-                    default=self.config_entry.options.get("log_to_file", False),
+                    "enable_file_logging",
+                    default=self.config_entry.options.get("enable_file_logging", False),
                 ): bool,
                 vol.Optional(
                     "logging_device_types",
@@ -415,8 +415,8 @@ class EzvilleWallpadOptionsFlowHandler(config_entries.OptionsFlow):
                     default=self.config_entry.options.get("dump_time", 0),
                 ): vol.All(vol.Coerce(int), vol.Range(min=0, max=60)),
                 vol.Optional(
-                    "log_to_file",
-                    default=self.config_entry.options.get("log_to_file", False),
+                    "enable_file_logging",
+                    default=self.config_entry.options.get("enable_file_logging", False),
                 ): bool,
                 vol.Optional(
                     "logging_device_types",
