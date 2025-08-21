@@ -272,6 +272,7 @@ class EzvilleWallpadCoordinator(DataUpdateCoordinator):
 
     def _on_device_discovered(self, device_type: str, device_id: Any):
         """Handle new device discovery."""
+        # Unknown devices should always be processed
         if device_type != "unknown" and device_type not in self.capabilities:
             _LOGGER.debug("Ignoring discovered device %s_%s (not in capabilities)", 
                          device_type, device_id)
@@ -289,7 +290,7 @@ class EzvilleWallpadCoordinator(DataUpdateCoordinator):
             device_key = device_type
         
         if device_key not in self.devices:
-            _LOGGER.info("Discovered new device: %s", device_key)
+            _LOGGER.info("Discovered new device: %s (type: %s, id: %s)", device_key, device_type, device_id)
             
             # Parse device ID to get display name
             if device_type in ["light", "plug"] and isinstance(device_id, str) and "_" in device_id:
@@ -299,6 +300,7 @@ class EzvilleWallpadCoordinator(DataUpdateCoordinator):
             elif device_type == "thermostat" and device_id:
                 display_name = f"{device_type.title()} {device_id}"
             elif device_type == "unknown":
+                # device_id is the signature (8 hex characters)
                 display_name = f"Unknown {device_id}"
             else:
                 # Single instance devices
@@ -311,6 +313,8 @@ class EzvilleWallpadCoordinator(DataUpdateCoordinator):
                 "name": display_name,
                 "state": {}
             }
+            
+            _LOGGER.info("Created device entry: %s", self.devices[device_key])
             
             # Check if platform needs to be loaded
             self._check_and_load_platform(device_type)
@@ -503,6 +507,7 @@ class EzvilleWallpadCoordinator(DataUpdateCoordinator):
             elif device_type == "thermostat" and device_id:
                 display_name = f"{device_type.title()} {device_id}"
             elif device_type == "unknown":
+                # device_id is the signature (8 hex characters)  
                 display_name = f"Unknown {device_id}"
             else:
                 # Single instance devices

@@ -36,15 +36,18 @@ async def async_setup_entry(
     def async_add_sensors(device_key: str, device_info: dict):
         """Add new sensor entities."""
         entities = []
+        device_type = device_info.get("device_type")
+        
+        _LOGGER.debug("async_add_sensors called for device_key=%s, device_type=%s", device_key, device_type)
         
         # Add plug power sensor
-        if device_info["device_type"] == "plug" and f"{device_key}_power" not in added_devices:
+        if device_type == "plug" and f"{device_key}_power" not in added_devices:
             added_devices.add(f"{device_key}_power")
             entities.append(EzvillePowerSensor(coordinator, device_key, device_info))
             _LOGGER.info("Added power sensor for %s", device_key)
         
         # Add energy monitor sensors
-        if device_info["device_type"] == "energy":
+        if device_type == "energy":
             if f"{device_key}_meter" not in added_devices:
                 added_devices.add(f"{device_key}_meter")
                 entities.append(EzvilleEnergyMeterSensor(coordinator, device_key, device_info))
@@ -55,7 +58,7 @@ async def async_setup_entry(
                 log_info(_LOGGER, "energy", "Added energy power sensor for %s", device_key)
         
         # Add thermostat temperature sensors
-        if device_info["device_type"] == "thermostat":
+        if device_type == "thermostat":
             if f"{device_key}_current_temp" not in added_devices:
                 added_devices.add(f"{device_key}_current_temp")
                 entities.append(EzvilleThermostatCurrentSensor(coordinator, device_key, device_info))
@@ -66,13 +69,19 @@ async def async_setup_entry(
                 _LOGGER.info("Added thermostat target temperature sensor for %s", device_key)
         
         # Add unknown device sensor
-        if device_info["device_type"] == "unknown" and f"{device_key}_state" not in added_devices:
-            added_devices.add(f"{device_key}_state")
-            entities.append(EzvilleUnknownSensor(coordinator, device_key, device_info))
-            _LOGGER.info("Added unknown device sensor for %s", device_key)
+        if device_type == "unknown":
+            if f"{device_key}_state" not in added_devices:
+                added_devices.add(f"{device_key}_state")
+                entities.append(EzvilleUnknownSensor(coordinator, device_key, device_info))
+                _LOGGER.info("Added unknown device sensor for %s with device_info: %s", device_key, device_info)
+            else:
+                _LOGGER.debug("Unknown device sensor %s already added", device_key)
         
         if entities:
+            _LOGGER.info("Adding %d entities to Home Assistant", len(entities))
             async_add_entities(entities)
+        else:
+            _LOGGER.debug("No entities to add for device_key=%s", device_key)
     
     # Add existing devices
     for device_key, device_info in coordinator.devices.items():
@@ -440,6 +449,10 @@ class EzvilleThermostatTargetSensor(CoordinatorEntity, SensorEntity):
 
     def _handle_coordinator_update(self) -> None:
         """Handle updated data from the coordinator."""
+        # Update last detected time
+        import time
+        self._last_detected = time.time()
+        
         # Schedule update safely from any thread
         if hasattr(self, 'hass') and self.hass:
             self.hass.loop.call_soon_threadsafe(self.async_write_ha_state)
@@ -480,22 +493,25 @@ class EzvilleUnknownSensor(CoordinatorEntity, SensorEntity):
         
         # Entity attributes
         self._attr_unique_id = f"{DOMAIN}_{device_key}_state"
-        # Create entity name with signature
+        # Create entity name with signature (8 hex chars)
         if device_id and device_id != "system":
+            # device_id is the signature (8 hex chars)
             self._attr_name = f"Unknown {device_id}"
         else:
             self._attr_name = "Unknown"
         self._attr_icon = "mdi:help-circle"
         
-        # Device info from coordinator
-        self._attr_device_info = coordinator.get_device_info(device_key)
+        # Device info - use unknown device grouping
+        from .device import EzvilleWallpadDevice
+        base_device = EzvilleWallpadDevice(coordinator, device_key, self._attr_unique_id, self._attr_name)
+        self._attr_device_info = base_device.device_info
         
         # Add timestamp attributes
         import time
         self._first_detected = time.time()
         self._last_detected = time.time()
         
-        _LOGGER.debug("Initialized unknown device sensor: %s", self._attr_name)
+        _LOGGER.debug("Initialized unknown device sensor: %s (device_id: %s)", self._attr_name, device_id)
 
     @property
     def native_value(self) -> Optional[str]:

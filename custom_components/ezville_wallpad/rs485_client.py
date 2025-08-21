@@ -501,15 +501,14 @@ class EzvilleRS485Client:
         if device_id == 0x0E:  # Light device
             room_id = device_num & 0x0F
             log_info(_LOGGER, device_type, "Packet Analysis - Device ID: 0x%02X(Light), Room: 0x%02X(%d), Cmd: 0x%02X, Packet: %s", 
-                         device_id, room_id, room_id, command, packet.hex())
+                         device_id, device_num, room_id, command, packet.hex())
         elif device_id == 0x39:  # Plug device
             room_id = device_num >> 4
             log_info(_LOGGER, device_type, "Packet Analysis - Device ID: 0x%02X(Plug), Room: 0x%02X(%d), Cmd: 0x%02X, Packet: %s", 
-                         device_id, room_id, room_id, command, packet.hex())
+                         device_id, device_num, room_id, command, packet.hex())
         elif device_id == 0x36:  # Thermostat device
-            room_id = device_num >> 4
-            log_info(_LOGGER, device_type, "Packet Analysis - Device ID: 0x%02X(Thermostat), Room: 0x%02X(%d), Cmd: 0x%02X, Packet: %s", 
-                         device_id, room_id, room_id, command, packet.hex())
+            log_info(_LOGGER, device_type, "Packet Analysis - Device ID: 0x%02X(Thermostat), Num: 0x%02X(%d), Cmd: 0x%02X, Packet: %s", 
+                         device_id, device_num, device_num >> 4, command, packet.hex())
         else:
             log_info(_LOGGER, device_type, "Packet Analysis - Device ID: 0x%02X, Num: 0x%02X(%d), Cmd: 0x%02X, Packet: %s", 
                          device_id, device_num, device_num, command, packet.hex())
@@ -590,7 +589,7 @@ class EzvilleRS485Client:
                             data_length = packet[4]
                             # Plug count is data length divided by 3
                             plug_count = int(data_length / 3)
-                            log_info(_LOGGER, device_type, "=> Plug state: Room %d (device_num=0x%02X), Data length: %d, Plug count: %d", room_id, device_num, data_length, plug_count)
+                            log_info(_LOGGER, device_type, "=> Plug state: Room %d (device_num=0x%02X), Data length: %d bytes, Plug count: %d", room_id, device_num, data_length, plug_count)
                             
                             # Process each plug
                             for plug_num in range(1, min(plug_count + 1, 3)):  # Max 2 plugs
@@ -662,12 +661,10 @@ class EzvilleRS485Client:
                                         log_debug(_LOGGER, device_type, "=> Callback completed for %s", device_key)
                     
                     elif device_type == "thermostat":
-                        # Extract room number from upper 4 bits
-                        room_id = int(device_num >> 4)
-                        
+                        # Special thermostat packet format
                         if len(packet) > 4:
                             data_length = packet[4]
-                            log_info(_LOGGER, device_type, "=> Thermostat state: Room %d (device_num=0x%02X), Data length: %d bytes", room_id, device_num, data_length)
+                            log_info(_LOGGER, device_type, "=> Thermostat state: Num %d (device_num=0x%02X), Data length: %d bytes", int(device_num >> 4), device_num, data_length)
                             
                             # Log raw data for analysis
                             if len(packet) > 5:
@@ -675,7 +672,7 @@ class EzvilleRS485Client:
                                              ' '.join([f'{b:02X}' for b in packet[5:]]))
                             
                             # Different parsing based on packet format
-                            if room_id == 0x01 and data_length == 0x0D:  # Special format from log
+                            if data_length == 0x0D:  # Special format from log
                                 # Format: f7 36 1f 81 0d 00 00 0f 00 00 05 1e 05 1c 05 1b 05 1b 5f cc
                                 # bytes 5-9: header/status bytes
                                 # bytes 10-11: temp pair 1 (target, current)
@@ -1393,3 +1390,6 @@ class EzvilleMqtt:
             self._client.disconnect()
             self._connected = False
             _LOGGER.debug("MQTT connection closed")
+_client.disconnect()
+            self._connected = False
+            _LOGGER.debug("
