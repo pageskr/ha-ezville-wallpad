@@ -321,7 +321,7 @@ class EzvilleRS485Client:
         
         # Process each unique message
         for msg in unique_messages:
-            # Create signature from first 4 bytes
+            # Create signature from first 4 bytes (8 hex characters)
             signature = msg[:4].hex()
             
             # Check if this is a new or changed packet
@@ -909,7 +909,7 @@ class EzvilleRS485Client:
             log_info(_LOGGER, "unknown", "=> Unknown device 0x60 control packet: device_num=0x%02X", device_num)
             return
         
-        # Create signature from first 4 bytes
+        # Create signature from first 4 bytes (8 hex characters)
         signature = packet[:4].hex()
         
         # Check if value has changed
@@ -919,9 +919,9 @@ class EzvilleRS485Client:
         
         # Update previous value
         if signature in self._previous_mqtt_values:
-            log_info(_LOGGER, "unknown", "Updated signature %s: %s", signature[:8], ' '.join([f"{b:02x}" for b in packet[4:]]))
+            log_info(_LOGGER, "unknown", "Updated signature %s: %s", signature, ' '.join([f"{b:02x}" for b in packet[4:]]))
         else:
-            log_info(_LOGGER, "unknown", "Created signature %s: %s", signature[:8], ' '.join([f"{b:02x}" for b in packet[4:]]))
+            log_info(_LOGGER, "unknown", "Created signature %s: %s", signature, ' '.join([f"{b:02x}" for b in packet[4:]]))
         
         self._previous_mqtt_values[signature] = packet
         
@@ -951,24 +951,25 @@ class EzvilleRS485Client:
         if command == 0x01 and device_id in [0x0E, 0x32, 0x36, 0x39, 0x60]:
             return
         
-        # Create signature from first 4 bytes
+        # Create signature from first 4 bytes (8 hex characters)
         signature = packet[:4].hex()
         
         # Create unknown device key
         device_key = f"unknown_{signature}"
         device_type = "unknown"
         
-        # Extract state data
+        # Extract state data - store full packet data
         state = {
             "device_id": f"0x{device_id:02X}",
             "device_num": device_num,
             "command": f"0x{command:02X}",
-            "data": packet.hex(),
-            "signature": signature
+            "data": packet.hex(),  # Full packet data
+            "signature": signature,
+            "packet_length": len(packet)
         }
         
-        # Check if this is a state update packet (usually with command >= 0x80)
-        if command >= 0x80 and len(packet) > 4:
+        # Add raw data for packets with payload
+        if len(packet) > 4:
             state["raw_data"] = ' '.join([f"{b:02x}" for b in packet[4:-2]])
         
         # Check if new device/signature
@@ -1390,6 +1391,4 @@ class EzvilleMqtt:
             self._client.disconnect()
             self._connected = False
             _LOGGER.debug("MQTT connection closed")
-_client.disconnect()
-            self._connected = False
-            _LOGGER.debug("
+

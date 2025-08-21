@@ -47,97 +47,102 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     LOGGING_DEVICE_TYPES = entry.options.get("logging_device_types", [])
     
     if LOGGING_ENABLED:
-        _LOGGER.info("Setting up Ezville Wallpad integration")
-        _LOGGER.debug("Config data: %s", entry.data)
-        _LOGGER.debug("Config options: %s", entry.options)
-    
-    # Get configuration
-    connection_type = entry.data[CONF_CONNECTION_TYPE]
-    
-    # Get scan interval based on connection type
-    if connection_type == CONNECTION_TYPE_MQTT:
-        # MQTT doesn't need scan interval
-        scan_interval = None
-        _LOGGER.debug("MQTT mode: No scan interval needed")
+        _LOGGER.info("Starting Ezville Wallpad integration setup with file logging enabled")
+        _LOGGER.info("Logging device types: %s", LOGGING_DEVICE_TYPES)
+        
+        # Setup file logging
+        import os
+        from logging.handlers import TimedRotatingFileHandler
+        
+        # Create logs directory
+        log_dir = os.path.join(hass.config.config_dir, "logs")
+        os.makedirs(log_dir, exist_ok=True)
+        
+        # Create file handler
+        log_file = os.path.join(log_dir, "ezville_wallpad.log")
+        file_handler = TimedRotatingFileHandler(
+            log_file,
+            when="midnight",
+            interval=1,
+            backupCount=7
+        )
+        file_handler.setLevel(logging.DEBUG)
+        
+        # Create formatter
+        formatter = logging.Formatter(
+            '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+        )
+        file_handler.setFormatter(formatter)
+        
+        # Add handler to logger
+        logger = logging.getLogger("custom_components.ezville_wallpad")
+        logger.addHandler(file_handler)
+        logger.setLevel(logging.DEBUG)
+        
+        _LOGGER.info("File logging configured at: %s", log_file)
     else:
-        scan_interval = entry.options.get("scan_interval", DEFAULT_SCAN_INTERVAL)
-        _LOGGER.debug("Scan interval: %d seconds", scan_interval)
+        _LOGGER.info("Starting Ezville Wallpad integration setup")
+    
+    # Store entry data
+    hass.data.setdefault(DOMAIN, {})
+    
+    # Extract configuration
+    connection_type = entry.data[CONF_CONNECTION_TYPE]
     
     # Create coordinator based on connection type
     if connection_type == CONNECTION_TYPE_SERIAL:
-        serial_port = entry.data[CONF_SERIAL_PORT]
-        _LOGGER.info("Creating coordinator for serial connection: %s", serial_port)
         coordinator = EzvilleWallpadCoordinator(
-            hass,
+            hass=hass,
             config_entry=entry,
             connection_type=connection_type,
-            serial_port=serial_port,
-            update_interval=timedelta(seconds=scan_interval) if scan_interval else None,
+            serial_port=entry.data[CONF_SERIAL_PORT],
+            update_interval=timedelta(seconds=entry.options.get("scan_interval", DEFAULT_SCAN_INTERVAL)),
         )
     elif connection_type == CONNECTION_TYPE_SOCKET:
-        host = entry.data[CONF_HOST]
-        port = entry.data[CONF_PORT]
-        _LOGGER.info("Creating coordinator for socket connection: %s:%s", host, port)
         coordinator = EzvilleWallpadCoordinator(
-            hass,
+            hass=hass,
             config_entry=entry,
             connection_type=connection_type,
-            host=host,
-            port=port,
-            update_interval=timedelta(seconds=scan_interval) if scan_interval else None,
+            host=entry.data[CONF_HOST],
+            port=entry.data[CONF_PORT],
+            update_interval=timedelta(seconds=entry.options.get("scan_interval", DEFAULT_SCAN_INTERVAL)),
         )
     elif connection_type == CONNECTION_TYPE_MQTT:
-        mqtt_broker = entry.data[CONF_MQTT_BROKER]
-        mqtt_port = entry.data[CONF_MQTT_PORT]
-        mqtt_username = entry.data.get(CONF_MQTT_USERNAME)
-        mqtt_password = entry.data.get(CONF_MQTT_PASSWORD)
-        mqtt_topic_recv = entry.data.get(CONF_MQTT_TOPIC_RECV)
-        mqtt_topic_send = entry.data.get(CONF_MQTT_TOPIC_SEND)
-        mqtt_state_suffix = entry.data.get(CONF_MQTT_STATE_SUFFIX, DEFAULT_MQTT_STATE_SUFFIX)
-        mqtt_command_suffix = entry.data.get(CONF_MQTT_COMMAND_SUFFIX, DEFAULT_MQTT_COMMAND_SUFFIX)
-        mqtt_qos = entry.data.get(CONF_MQTT_QOS, DEFAULT_MQTT_QOS)
-        
-        _LOGGER.info("Creating coordinator for MQTT connection: %s:%s", mqtt_broker, mqtt_port)
-        _LOGGER.debug("MQTT topics - Recv: %s, Send: %s, QoS: %d", 
-                     mqtt_topic_recv, mqtt_topic_send, mqtt_qos)
-        
+        # MQTT is event-driven, no need for regular polling
         coordinator = EzvilleWallpadCoordinator(
-            hass,
+            hass=hass,
             config_entry=entry,
             connection_type=connection_type,
-            mqtt_broker=mqtt_broker,
-            mqtt_port=mqtt_port,
-            mqtt_username=mqtt_username,
-            mqtt_password=mqtt_password,
-            mqtt_topic_recv=mqtt_topic_recv,
-            mqtt_topic_send=mqtt_topic_send,
-            mqtt_state_suffix=mqtt_state_suffix,
-            mqtt_command_suffix=mqtt_command_suffix,
-            mqtt_qos=mqtt_qos,
-            update_interval=None,  # No polling for MQTT
+            mqtt_broker=entry.data[CONF_MQTT_BROKER],
+            mqtt_port=entry.data[CONF_MQTT_PORT],
+            mqtt_username=entry.data.get(CONF_MQTT_USERNAME),
+            mqtt_password=entry.data.get(CONF_MQTT_PASSWORD),
+            mqtt_topic_recv=entry.data.get(CONF_MQTT_TOPIC_RECV),
+            mqtt_topic_send=entry.data.get(CONF_MQTT_TOPIC_SEND),
+            mqtt_state_suffix=entry.data.get(CONF_MQTT_STATE_SUFFIX, DEFAULT_MQTT_STATE_SUFFIX),
+            mqtt_command_suffix=entry.data.get(CONF_MQTT_COMMAND_SUFFIX, DEFAULT_MQTT_COMMAND_SUFFIX),
+            mqtt_qos=entry.data.get(CONF_MQTT_QOS, DEFAULT_MQTT_QOS),
         )
     else:
         _LOGGER.error("Invalid connection type: %s", connection_type)
         return False
-
-    # Test connection
-    try:
-        _LOGGER.debug("Testing initial connection...")
-        await coordinator.async_config_entry_first_refresh()
-        _LOGGER.info("Initial connection successful")
-    except Exception as err:
-        _LOGGER.error("Failed to connect to Ezville Wallpad: %s", err)
-        raise ConfigEntryNotReady from err
-
+    
     # Store coordinator
-    hass.data.setdefault(DOMAIN, {})
     hass.data[DOMAIN][entry.entry_id] = coordinator
-
-    # Setup platforms based on devices and capabilities
+    
+    # Perform initial connection
+    try:
+        await coordinator.async_config_entry_first_refresh()
+    except Exception as err:
+        _LOGGER.error("Failed to connect: %s", err)
+        raise ConfigEntryNotReady from err
+    
+    # Get platforms to load
     platforms_to_load = coordinator.get_platforms_to_load()
     
     if platforms_to_load:
         _LOGGER.info("Loading platforms: %s", platforms_to_load)
+        # Mark as loaded to prevent duplicate loading
         coordinator._platform_loaded.update(platforms_to_load)
         await hass.config_entries.async_forward_entry_setups(entry, list(platforms_to_load))
     else:
