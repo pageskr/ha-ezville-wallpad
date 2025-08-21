@@ -16,8 +16,8 @@
           "scan_interval": "Scan Interval (seconds)",
           "max_retry": "Max Retry Attempts",
           "dump_time": "Packet Dump Time (seconds, 0=disabled)",
-          "log_to_file": "Enable File Logging",
-          "capabilities": "Enabled Device Types"
+          "enable_file_logging": "Enable File Logging",
+          "logging_device_types": "Device Types to Log"
         }
       },
       "socket": {
@@ -29,8 +29,8 @@
           "scan_interval": "Scan Interval (seconds)",
           "max_retry": "Max Retry Attempts",
           "dump_time": "Packet Dump Time (seconds, 0=disabled)",
-          "log_to_file": "Enable File Logging",
-          "capabilities": "Enabled Device Types"
+          "enable_file_logging": "Enable File Logging",
+          "logging_device_types": "Device Types to Log"
         }
       },
       "mqtt": {
@@ -46,8 +46,8 @@
           "mqtt_state_suffix": "State Topic Suffix",
           "mqtt_command_suffix": "Command Topic Suffix",
           "mqtt_qos": "QoS Level (0-2)",
-          "log_to_file": "Enable File Logging",
-          "capabilities": "Enabled Device Types"
+          "enable_file_logging": "Enable File Logging",
+          "logging_device_types": "Device Types to Log"
         }
       }
     },
@@ -71,14 +71,14 @@
           "mqtt_state_suffix": "MQTT State Topic Suffix",
           "mqtt_command_suffix": "MQTT Command Topic Suffix",
           "mqtt_qos": "MQTT QoS Level (0-2)",
-          "log_to_file": "Enable File Logging", 
-          "capabilities": "Enabled Device Types"
+          "enable_file_logging": "Enable File Logging", 
+          "logging_device_types": "Device Types to Log"
         }
       }
     }
   },
   "selector": {
-    "capabilities": {
+    "logging_device_types": {
       "options": {
         "light": "Lights",
         "plug": "Smart Plugs",
@@ -87,7 +87,8 @@
         "gas": "Gas Valves",
         "energy": "Energy Monitoring",
         "elevator": "Elevator Controls",
-        "doorbell": "Doorbell System"
+        "doorbell": "Doorbell System",
+        "unknown": "Unknown Devices"
       }
     }
   }

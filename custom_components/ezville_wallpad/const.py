@@ -177,15 +177,17 @@ ACK_HEADER = {
 }
 
 # Platform types
+from homeassistant.const import Platform
+
 PLATFORMS = [
-    "light",
-    "switch", 
-    "sensor",
-    "climate",
-    "fan",
-    "valve",
-    "button",
-    "binary_sensor",
+    Platform.LIGHT,
+    Platform.SWITCH, 
+    Platform.SENSOR,
+    Platform.CLIMATE,
+    Platform.FAN,
+    Platform.VALVE,
+    Platform.BUTTON,
+    Platform.BINARY_SENSOR,
 ]
 
 # Device names

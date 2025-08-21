@@ -9,7 +9,6 @@ from homeassistant.exceptions import ConfigEntryNotReady
 
 from .const import (
     DOMAIN,
-    PLATFORMS,
     CONF_CONNECTION_TYPE,
     CONF_SERIAL_PORT,
     CONF_HOST,
