@@ -73,7 +73,9 @@ async def async_setup_entry(
     @callback
     def device_added():
         """Handle new device added."""
-        for device_key, device_info in coordinator.devices.items():
+        # Create a copy of the devices to avoid dictionary changed size during iteration
+        devices_copy = dict(coordinator.devices)
+        for device_key, device_info in devices_copy.items():
             if device_info["device_type"] == "thermostat":
                 async_add_thermostats(device_key, device_info)
     
@@ -164,12 +166,12 @@ class EzvilleThermostat(CoordinatorEntity, ClimateEntity):
         target = self.target_temperature
         
         if current and target:
-            if current < target:
-                return HVACAction.HEATING
-            elif current > target:
-                return HVACAction.COOLING
-            else:
-                return HVACAction.IDLE
+            # In heat mode, only show heating or idle
+            if self.hvac_mode == HVACMode.HEAT:
+                if current < target:
+                    return HVACAction.HEATING
+                else:
+                    return HVACAction.IDLE
         
         return HVACAction.IDLE
 

@@ -50,7 +50,9 @@ async def async_setup_entry(
     @callback
     def device_added():
         """Handle new device added."""
-        for device_key, device_info in coordinator.devices.items():
+        # Create a copy of the devices to avoid dictionary changed size during iteration
+        devices_copy = dict(coordinator.devices)
+        for device_key, device_info in devices_copy.items():
             if device_info["device_type"] == "plug" and device_key not in added_devices:
                 async_add_switch(device_key, device_info)
     

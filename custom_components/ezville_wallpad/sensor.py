@@ -66,8 +66,8 @@ async def async_setup_entry(
                 _LOGGER.info("Added thermostat target temperature sensor for %s", device_key)
         
         # Add unknown device sensor
-        if device_info["device_type"] == "unknown" and f"{device_key}_unknown" not in added_devices:
-            added_devices.add(f"{device_key}_unknown")
+        if device_info["device_type"] == "unknown" and f"{device_key}_state" not in added_devices:
+            added_devices.add(f"{device_key}_state")
             entities.append(EzvilleUnknownSensor(coordinator, device_key, device_info))
             _LOGGER.info("Added unknown device sensor for %s", device_key)
         
@@ -83,7 +83,9 @@ async def async_setup_entry(
     @callback
     def device_added():
         """Handle new device added."""
-        for device_key, device_info in coordinator.devices.items():
+        # Create a copy of the devices to avoid dictionary changed size during iteration
+        devices_copy = dict(coordinator.devices)
+        for device_key, device_info in devices_copy.items():
             if device_info["device_type"] in ["plug", "energy", "thermostat", "unknown"]:
                 async_add_sensors(device_key, device_info)
     

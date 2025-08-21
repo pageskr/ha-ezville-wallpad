@@ -45,7 +45,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # Set global logging settings
     global LOGGING_ENABLED, LOGGING_DEVICE_TYPES
     LOGGING_ENABLED = entry.options.get("log_to_file", False)
-    LOGGING_DEVICE_TYPES = entry.options.get("log_device_types", [])
+    LOGGING_DEVICE_TYPES = entry.options.get("logging_device_types", [])
     
     if LOGGING_ENABLED:
         _LOGGER.info("Setting up Ezville Wallpad integration")

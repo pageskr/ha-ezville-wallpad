@@ -5,7 +5,6 @@ from typing import Any, Optional
 from homeassistant.components.light import (
     LightEntity,
     ColorMode,
-    ATTR_BRIGHTNESS,
 )
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
@@ -54,7 +53,9 @@ async def async_setup_entry(
     @callback
     def device_added():
         """Handle new device added."""
-        for device_key, device_info in coordinator.devices.items():
+        # Create a copy of the devices to avoid dictionary changed size during iteration
+        devices_copy = dict(coordinator.devices)
+        for device_key, device_info in devices_copy.items():
             if device_info["device_type"] == "light" and device_key not in added_devices:
                 async_add_light(device_key, device_info)
     
@@ -86,8 +87,8 @@ class EzvilleLight(CoordinatorEntity, LightEntity):
             self._attr_name = f"Light {room_num} {light_num}"
         else:
             self._attr_name = device_info.get("name", f"Light {device_info['device_id']}")
-        self._attr_color_mode = ColorMode.BRIGHTNESS
-        self._attr_supported_color_modes = {ColorMode.BRIGHTNESS}
+        self._attr_color_mode = ColorMode.ONOFF
+        self._attr_supported_color_modes = {ColorMode.ONOFF}
         
         # Device info - use room-based grouping
         from .device import EzvilleWallpadDevice
@@ -103,14 +104,7 @@ class EzvilleLight(CoordinatorEntity, LightEntity):
         state = device.get("state", {})
         return state.get("power", False)
 
-    @property
-    def brightness(self) -> Optional[int]:
-        """Return the brightness of the light."""
-        device = self.coordinator.devices.get(self._device_key, {})
-        state = device.get("state", {})
-        # Convert 0-100 to 0-255
-        brightness_percent = state.get("brightness", 0)
-        return int(brightness_percent * 255 / 100)
+
 
     @property
     def available(self) -> bool:
@@ -121,8 +115,6 @@ class EzvilleLight(CoordinatorEntity, LightEntity):
         """Turn on the light."""
         _LOGGER.debug("Turning on light %s", self._device_key)
         
-        brightness = kwargs.get(ATTR_BRIGHTNESS)
-        
         # Send power on command
         await self.coordinator.send_command(
             "light",
@@ -131,17 +123,9 @@ class EzvilleLight(CoordinatorEntity, LightEntity):
             True
         )
         
-        # If brightness is specified, send brightness command
-        if brightness is not None:
-            brightness_percent = int(brightness * 100 / 255)
-            _LOGGER.debug("Setting brightness to %d%%", brightness_percent)
-            # This would need a separate brightness command implementation
-        
         # Update local state immediately for responsiveness
         if self._device_key in self.coordinator.devices:
             self.coordinator.devices[self._device_key]["state"]["power"] = True
-            if brightness is not None:
-                self.coordinator.devices[self._device_key]["state"]["brightness"] = int(brightness * 100 / 255)
         
         self.async_write_ha_state()
 
