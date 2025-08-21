@@ -990,12 +990,14 @@ class EzvilleRS485Client:
         
         # Call callback if registered with signature as device_id
         if "unknown" in self._callbacks:
-            log_debug(_LOGGER, "unknown", "=> Calling callback for unknown with key=%s, state=%s", 
+            log_info(_LOGGER, "unknown", "=> Calling callback for unknown with key=%s, state=%s", 
                          signature, state)
             self._callbacks["unknown"](device_type, signature, state)
-            log_debug(_LOGGER, "unknown", "=> Callback completed for %s", device_key)
+            log_info(_LOGGER, "unknown", "=> Callback completed for %s", device_key)
+        else:
+            log_error(_LOGGER, "unknown", "=> No callback registered for unknown devices!")
         
-        log_debug(_LOGGER, "unknown", "=> Unknown device %s updated with state: %s", device_key, state)
+        log_info(_LOGGER, "unknown", "=> Unknown device %s updated with state: %s", device_key, state)
 
     def _parse_state(self, device_type: str, packet: bytes) -> Optional[Dict[str, Any]]:
         """Parse state packet based on device type."""

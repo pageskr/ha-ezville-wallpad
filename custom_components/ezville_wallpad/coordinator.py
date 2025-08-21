@@ -323,6 +323,18 @@ class EzvilleWallpadCoordinator(DataUpdateCoordinator):
             self.hass.loop.call_soon_threadsafe(
                 lambda: self.async_set_updated_data(self.devices)
             )
+            
+            # For unknown devices, also trigger sensor platform loading if not loaded
+            if device_type == "unknown":
+                from homeassistant.const import Platform
+                if Platform.SENSOR not in self._platform_loaded:
+                    _LOGGER.info("Loading sensor platform for unknown device")
+                    self._platform_loaded.add(Platform.SENSOR)
+                    self.hass.async_create_task(
+                        self.hass.config_entries.async_forward_entry_setup(
+                            self.config_entry, Platform.SENSOR
+                        )
+                    )
 
     def _check_and_load_platform(self, device_type: str):
         """Check if platform needs to be loaded for device type."""
@@ -454,6 +466,11 @@ class EzvilleWallpadCoordinator(DataUpdateCoordinator):
     @callback
     def _device_update_callback(self, device_type: str, device_id: Any, state: Dict[str, Any]):
         """Handle device state updates."""
+        # Always log unknown devices
+        if device_type == "unknown":
+            _LOGGER.info("==> Unknown device callback: device_type=%s, device_id=%s, state=%s",
+                         device_type, device_id, state)
+        
         # Get logging enabled device types from options
         log_device_types = self.options.get("logging_device_types", [])
         

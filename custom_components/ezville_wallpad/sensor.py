@@ -84,7 +84,9 @@ async def async_setup_entry(
             _LOGGER.debug("No entities to add for device_key=%s", device_key)
     
     # Add existing devices
+    _LOGGER.info("Adding existing devices to sensor platform")
     for device_key, device_info in coordinator.devices.items():
+        _LOGGER.debug("Checking device %s with type %s", device_key, device_info.get("device_type"))
         if device_info["device_type"] in ["plug", "energy", "thermostat", "unknown"]:
             async_add_sensors(device_key, device_info)
     
@@ -92,6 +94,7 @@ async def async_setup_entry(
     @callback
     def device_added():
         """Handle new device added."""
+        _LOGGER.info("Device added callback triggered")
         # Create a copy of the devices to avoid dictionary changed size during iteration
         devices_copy = dict(coordinator.devices)
         for device_key, device_info in devices_copy.items():
