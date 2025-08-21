@@ -272,6 +272,10 @@ class EzvilleWallpadCoordinator(DataUpdateCoordinator):
 
     def _on_device_discovered(self, device_type: str, device_id: Any):
         """Handle new device discovery."""
+        # Always log unknown device discovery
+        if device_type == "unknown":
+            _LOGGER.info("Unknown device discovery triggered: device_type=%s, device_id=%s", device_type, device_id)
+        
         # Unknown devices should always be processed
         if device_type != "unknown" and device_type not in self.capabilities:
             _LOGGER.debug("Ignoring discovered device %s_%s (not in capabilities)", 
@@ -314,7 +318,8 @@ class EzvilleWallpadCoordinator(DataUpdateCoordinator):
                 "state": {}
             }
             
-            _LOGGER.info("Created device entry: %s", self.devices[device_key])
+            _LOGGER.info("Created device entry: key=%s, device=%s", device_key, self.devices[device_key])
+            _LOGGER.info("Total devices after addition: %d", len(self.devices))
             
             # Check if platform needs to be loaded
             self._check_and_load_platform(device_type)
@@ -335,6 +340,11 @@ class EzvilleWallpadCoordinator(DataUpdateCoordinator):
                             self.config_entry, Platform.SENSOR
                         )
                     )
+                else:
+                    # Sensor platform already loaded, manually trigger device_added callback
+                    _LOGGER.info("Sensor platform already loaded, triggering manual update")
+                    # Force update of coordinator data
+                    self.async_set_updated_data(self.devices)
 
     def _check_and_load_platform(self, device_type: str):
         """Check if platform needs to be loaded for device type."""

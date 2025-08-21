@@ -66,9 +66,14 @@ class EzvilleWallpadDevice(CoordinatorEntity):
             device_name = "Doorbell"
             device_identifier = self._device_key
         elif device_type == "unknown":
-            # All unknown devices belong to single "Unknown" device
-            device_name = "Unknown"
-            device_identifier = "unknown"
+            # Each unknown signature gets its own device
+            if len(parts) > 1:
+                signature = parts[1]  # e.g., "f7300301" from "unknown_f7300301"
+                device_name = f"Unknown Device {signature.upper()}"
+                device_identifier = f"unknown_{signature}"
+            else:
+                device_name = "Unknown Device"
+                device_identifier = "unknown"
         else:
             device_name = f"Ezville Wallpad {self._device_key}"
             device_identifier = self._device_key

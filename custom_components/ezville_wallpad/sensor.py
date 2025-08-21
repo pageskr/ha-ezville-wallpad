@@ -12,8 +12,9 @@ from homeassistant.const import UnitOfPower, UnitOfEnergy, UnitOfTemperature
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
+from homeassistant.helpers.device_registry import DeviceInfo
 
-from .const import DOMAIN, log_debug, log_info, log_warning, log_error
+from .const import DOMAIN, log_debug, log_info, log_warning, log_error, MANUFACTURER, MODEL, DOCUMENTATION_URL
 from .coordinator import EzvilleWallpadCoordinator
 
 _LOGGER = logging.getLogger("custom_components.ezville_wallpad.sensor")
@@ -94,7 +95,7 @@ async def async_setup_entry(
     @callback
     def device_added():
         """Handle new device added."""
-        _LOGGER.info("Device added callback triggered")
+        _LOGGER.debug("Device added callback triggered")
         # Create a copy of the devices to avoid dictionary changed size during iteration
         devices_copy = dict(coordinator.devices)
         for device_key, device_info in devices_copy.items():
