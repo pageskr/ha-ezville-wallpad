@@ -67,7 +67,7 @@ class EzvilleWallpadDevice(CoordinatorEntity):
             device_identifier = self._device_key
         elif device_type == "unknown":
             # All unknown sensors belong to single "Unknown" device
-            device_name = "Unknown Devices"
+            device_name = "Unknown"
             device_identifier = "unknown"
         else:
             device_name = f"Ezville Wallpad {self._device_key}"

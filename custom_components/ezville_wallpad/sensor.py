@@ -78,7 +78,7 @@ async def async_setup_entry(
             else:
                 _LOGGER.debug("Unknown device sensor %s already added", device_key)
         
-        # Add command sensors for known devices
+        # Add command sensors for all known device types (except unknown)
         if device_type in ["light", "plug", "thermostat", "fan", "gas", "energy", "elevator", "doorbell"]:
             # Check if this is a command sensor (device_id starts with "cmd_")
             device_id = device_info.get("device_id", "")
@@ -124,7 +124,7 @@ async def async_setup_entry(
             # Handle normal sensors
             if device_type in ["plug", "energy", "thermostat", "unknown"]:
                 async_add_sensors(device_key, device_info)
-            # Handle command sensors
+            # Handle command sensors for all device types except unknown
             elif device_type in ["light", "plug", "thermostat", "fan", "gas", "energy", "elevator", "doorbell"]:
                 if isinstance(device_id, str) and device_id.startswith("cmd_"):
                     async_add_sensors(device_key, device_info)
@@ -621,19 +621,35 @@ class EzvilleCommandSensor(CoordinatorEntity, SensorEntity):
         
         # Entity attributes
         self._attr_unique_id = f"{DOMAIN}_{device_key}_command"
-        # Create entity name with command signature
+        # Create entity name with command signature and room info
         if device_id and device_id.startswith("cmd_"):
             # Extract signature from cmd_XXXXXXXX
             signature = device_id[4:].upper() if len(device_id) > 4 else "Unknown"
-            self._attr_name = f"{device_type.title()} Command {signature}"
+            # Extract room info from device_key
+            parts = device_key.split("_")
+            if device_type in ["light", "plug", "thermostat"] and len(parts) >= 2:
+                room_id = parts[1]
+                self._attr_name = f"{device_type.title()} {room_id} Command {signature}"
+            else:
+                # Single instance devices show without room number
+                self._attr_name = f"{device_type.title()} Command {signature}"
         else:
             self._attr_name = f"{device_type.title()} Command"
         self._attr_icon = "mdi:console-network"
         
-        # Device info - use device type grouping
+        # Device info - use appropriate grouping based on device type
         from .device import EzvilleWallpadDevice
-        # For command sensors, use the base device type for grouping
-        base_device_key = device_type  # Use device type as key for single devices
+        
+        # Extract room info from device_key for proper grouping
+        parts = device_key.split("_")
+        if device_type in ["light", "plug", "thermostat"] and len(parts) >= 3:
+            # For light_1_cmd_XXXXXXXX -> use light_1 as base key
+            # For thermostat_1_cmd_XXXXXXXX -> use thermostat_1 as base key
+            base_device_key = f"{parts[0]}_{parts[1]}"
+        else:
+            # Single instance devices (fan, gas, energy, elevator, doorbell)
+            base_device_key = device_type
+            
         base_device = EzvilleWallpadDevice(coordinator, base_device_key, self._attr_unique_id, self._attr_name)
         self._attr_device_info = base_device.device_info
         

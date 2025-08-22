@@ -868,16 +868,36 @@ class EzvilleRS485Client:
                 log_debug(_LOGGER, device_type, "=> Device 0x%02X is state device but command 0x%02X != expected 0x%02X",
                              device_id, command, expected_cmd)
                 
-                # Handle as command packet for known device
+                # Handle as command packet for all known device types
                 # Create command signature from packet
                 command_signature = packet[:4].hex()
                 command_key = f"cmd_{command_signature}"
-                device_key = f"{device_type}_{command_key}"
+                
+                # Determine device key based on device type
+                if device_type == "light":
+                    # Extract room info for Light
+                    room_id = device_num & 0x0F
+                    device_key = f"{device_type}_{room_id}_{command_key}"
+                    callback_id = f"{room_id}_{command_key}"
+                elif device_type == "plug":
+                    # Extract room info for Plug
+                    room_id = device_num >> 4
+                    device_key = f"{device_type}_{room_id}_{command_key}"
+                    callback_id = f"{room_id}_{command_key}"
+                elif device_type == "thermostat":
+                    # Extract room info for Thermostat
+                    room_id = device_num >> 4
+                    device_key = f"{device_type}_{room_id}_{command_key}"
+                    callback_id = f"{room_id}_{command_key}"
+                else:
+                    # Single instance devices (fan, gas, energy, elevator, doorbell)
+                    device_key = f"{device_type}_{command_key}"
+                    callback_id = command_key
                 
                 # Create command state
                 command_state = {
                     "data": packet.hex(),
-                    "device_id": f"0x{device_id:02X}",
+                    "device_id": f"cmd_{command_signature}",
                     "device_num": device_num,
                     "command": f"0x{command:02X}",
                     "signature": command_signature
@@ -891,7 +911,7 @@ class EzvilleRS485Client:
                     # Call discovery callbacks
                     for callback in self._device_discovery_callbacks:
                         try:
-                            callback(device_type, command_key)
+                            callback(device_type, callback_id)
                         except Exception as err:
                             _LOGGER.error("Error in discovery callback: %s", err)
                 
@@ -901,8 +921,8 @@ class EzvilleRS485Client:
                 # Call callback
                 if device_type in self._callbacks:
                     log_debug(_LOGGER, device_type, "=> Calling callback for %s command with key=%s, state=%s", 
-                                 device_type, command_key, command_state)
-                    self._callbacks[device_type](device_type, command_key, command_state)
+                                 device_type, callback_id, command_state)
+                    self._callbacks[device_type](device_type, callback_id, command_state)
                     log_debug(_LOGGER, device_type, "=> Callback completed for %s", device_key)
         
         # Check for ACK packets
