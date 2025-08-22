@@ -82,7 +82,7 @@ class EzvilleWallpadCoordinator(DataUpdateCoordinator):
         # Always include all capabilities for device discovery
         self.capabilities = [
             "light", "plug", "thermostat", "fan", "gas", 
-            "energy", "elevator", "doorbell"
+            "energy", "elevator", "doorbell", "unknown"
         ]
         
         _LOGGER.info("Initializing coordinator with capabilities: %s", self.capabilities)
@@ -297,12 +297,43 @@ class EzvilleWallpadCoordinator(DataUpdateCoordinator):
             _LOGGER.info("Discovered new device: %s (type: %s, id: %s)", device_key, device_type, device_id)
             
             # Parse device ID to get display name
-            if device_type in ["light", "plug"] and isinstance(device_id, str) and "_" in device_id:
-                # For light_1_2 format
-                parts = device_id.split("_")
-                display_name = f"{device_type.title()} {parts[0]} {parts[1]}"
-            elif device_type == "thermostat" and device_id:
-                display_name = f"{device_type.title()} {device_id}"
+            if device_type in ["light", "plug"] and isinstance(device_id, str):
+                if device_id.startswith("cmd_"):
+                    # Command sensor format: room_cmd_signature
+                    parts = device_id.split("_")
+                    if len(parts) >= 3:
+                        room_id = parts[0]
+                        signature = parts[2].upper()
+                        display_name = f"{device_type.title()} {room_id} Command {signature}"
+                    else:
+                        display_name = f"{device_type.title()} Command"
+                elif "_" in device_id:
+                    # Normal device format: room_num
+                    parts = device_id.split("_")
+                    display_name = f"{device_type.title()} {parts[0]} {parts[1]}"
+                else:
+                    display_name = f"{device_type.title()} {device_id}"
+            elif device_type == "thermostat":
+                if isinstance(device_id, str) and device_id.startswith("cmd_"):
+                    # Command sensor format: room_cmd_signature
+                    parts = device_id.split("_")
+                    if len(parts) >= 3:
+                        room_id = parts[0]
+                        signature = parts[2].upper()
+                        display_name = f"{device_type.title()} {room_id} Command {signature}"
+                    else:
+                        display_name = f"{device_type.title()} Command"
+                elif device_id:
+                    display_name = f"{device_type.title()} {device_id}"
+                else:
+                    display_name = device_type.title()
+            elif device_type in ["fan", "gas", "energy", "elevator", "doorbell"]:
+                if isinstance(device_id, str) and device_id.startswith("cmd_"):
+                    # Command sensor format: cmd_signature
+                    signature = device_id[4:].upper() if len(device_id) > 4 else "Unknown"
+                    display_name = f"{device_type.title()} Command {signature}"
+                else:
+                    display_name = device_type.title()
             elif device_type == "unknown":
                 # device_id is the signature (8 hex characters)
                 display_name = f"Unknown {device_id.upper()}"
@@ -527,12 +558,43 @@ class EzvilleWallpadCoordinator(DataUpdateCoordinator):
             log_info(_LOGGER, device_type, "==> New device detected via state update: %s", device_key)
             
             # Parse device ID to get display name
-            if device_type in ["light", "plug"] and isinstance(device_id, str) and "_" in device_id:
-                # For light_1_2 format
-                parts = device_id.split("_")
-                display_name = f"{device_type.title()} {parts[0]} {parts[1]}"
-            elif device_type == "thermostat" and device_id:
-                display_name = f"{device_type.title()} {device_id}"
+            if device_type in ["light", "plug"] and isinstance(device_id, str):
+                if device_id.startswith("cmd_"):
+                    # Command sensor format: room_cmd_signature
+                    parts = device_id.split("_")
+                    if len(parts) >= 3:
+                        room_id = parts[0]
+                        signature = parts[2].upper()
+                        display_name = f"{device_type.title()} {room_id} Command {signature}"
+                    else:
+                        display_name = f"{device_type.title()} Command"
+                elif "_" in device_id:
+                    # Normal device format: room_num
+                    parts = device_id.split("_")
+                    display_name = f"{device_type.title()} {parts[0]} {parts[1]}"
+                else:
+                    display_name = f"{device_type.title()} {device_id}"
+            elif device_type == "thermostat":
+                if isinstance(device_id, str) and device_id.startswith("cmd_"):
+                    # Command sensor format: room_cmd_signature
+                    parts = device_id.split("_")
+                    if len(parts) >= 3:
+                        room_id = parts[0]
+                        signature = parts[2].upper()
+                        display_name = f"{device_type.title()} {room_id} Command {signature}"
+                    else:
+                        display_name = f"{device_type.title()} Command"
+                elif device_id:
+                    display_name = f"{device_type.title()} {device_id}"
+                else:
+                    display_name = device_type.title()
+            elif device_type in ["fan", "gas", "energy", "elevator", "doorbell"]:
+                if isinstance(device_id, str) and device_id.startswith("cmd_"):
+                    # Command sensor format: cmd_signature
+                    signature = device_id[4:].upper() if len(device_id) > 4 else "Unknown"
+                    display_name = f"{device_type.title()} Command {signature}"
+                else:
+                    display_name = device_type.title()
             elif device_type == "unknown":
                 # device_id is the signature (8 hex characters)  
                 display_name = f"Unknown {device_id.upper()}"

@@ -621,20 +621,26 @@ class EzvilleCommandSensor(CoordinatorEntity, SensorEntity):
         
         # Entity attributes
         self._attr_unique_id = f"{DOMAIN}_{device_key}_command"
-        # Create entity name with command signature and room info
-        if device_id and device_id.startswith("cmd_"):
-            # Extract signature from cmd_XXXXXXXX
+        
+        # Extract signature from device_id
+        signature = "Unknown"
+        if device_id and isinstance(device_id, str) and device_id.startswith("cmd_"):
             signature = device_id[4:].upper() if len(device_id) > 4 else "Unknown"
-            # Extract room info from device_key
-            parts = device_key.split("_")
-            if device_type in ["light", "plug", "thermostat"] and len(parts) >= 2:
-                room_id = parts[1]
-                self._attr_name = f"{device_type.title()} {room_id} Command {signature}"
-            else:
-                # Single instance devices show without room number
-                self._attr_name = f"{device_type.title()} Command {signature}"
+        elif device_id and isinstance(device_id, str) and "_cmd_" in device_id:
+            # Format: room_cmd_signature
+            parts = device_id.split("_")
+            if len(parts) >= 3:
+                signature = parts[2].upper()
+        
+        # Create entity name based on device type and key
+        parts = device_key.split("_")
+        if device_type in ["light", "plug", "thermostat"] and len(parts) >= 2:
+            room_id = parts[1]
+            self._attr_name = f"{device_type.title()} {room_id} Command {signature}"
         else:
-            self._attr_name = f"{device_type.title()} Command"
+            # Single instance devices
+            self._attr_name = f"{device_type.title()} Command {signature}"
+        
         self._attr_icon = "mdi:console-network"
         
         # Device info - use appropriate grouping based on device type
@@ -653,7 +659,7 @@ class EzvilleCommandSensor(CoordinatorEntity, SensorEntity):
         base_device = EzvilleWallpadDevice(coordinator, base_device_key, self._attr_unique_id, self._attr_name)
         self._attr_device_info = base_device.device_info
         
-        _LOGGER.debug("Initialized command sensor: %s (device_id: %s)", self._attr_name, device_id)
+        _LOGGER.debug("Initialized command sensor: %s (device_id: %s, device_key: %s)", self._attr_name, device_id, device_key)
 
     @property
     def native_value(self) -> Optional[str]:
