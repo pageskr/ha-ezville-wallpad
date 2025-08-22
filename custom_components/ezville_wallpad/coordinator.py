@@ -305,7 +305,7 @@ class EzvilleWallpadCoordinator(DataUpdateCoordinator):
                 display_name = f"{device_type.title()} {device_id}"
             elif device_type == "unknown":
                 # device_id is the signature (8 hex characters)
-                display_name = f"Unknown {device_id}"
+                display_name = f"Unknown {device_id.upper()}"
             else:
                 # Single instance devices
                 display_name = device_type.title()
@@ -535,7 +535,7 @@ class EzvilleWallpadCoordinator(DataUpdateCoordinator):
                 display_name = f"{device_type.title()} {device_id}"
             elif device_type == "unknown":
                 # device_id is the signature (8 hex characters)  
-                display_name = f"Unknown {device_id}"
+                display_name = f"Unknown {device_id.upper()}"
             else:
                 # Single instance devices
                 display_name = device_type.title()
