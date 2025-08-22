@@ -39,6 +39,11 @@ async def async_setup_entry(
     entities = []
     for device_key, device_info in coordinator.devices.items():
         if device_info["device_type"] == "fan":
+            # Skip command sensors - they should be handled by sensor platform
+            device_id = device_info.get("device_id", "")
+            if isinstance(device_id, str) and device_id.startswith("cmd_"):
+                _LOGGER.debug("Skipping command sensor %s in fan platform", device_key)
+                continue
             entities.append(
                 EzvilleFan(
                     coordinator,
