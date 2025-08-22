@@ -867,63 +867,6 @@ class EzvilleRS485Client:
             else:
                 log_debug(_LOGGER, device_type, "=> Device 0x%02X is state device but command 0x%02X != expected 0x%02X",
                              device_id, command, expected_cmd)
-                
-                # Handle as command packet for all known device types
-                # Create command signature from packet
-                command_signature = packet[:4].hex()
-                command_key = f"cmd_{command_signature}"
-                
-                # Determine device key based on device type
-                if device_type == "light":
-                    # Extract room info for Light
-                    room_id = device_num & 0x0F
-                    device_key = f"{device_type}_{room_id}_{command_key}"
-                    callback_id = f"{room_id}_{command_key}"
-                elif device_type == "plug":
-                    # Extract room info for Plug
-                    room_id = device_num >> 4
-                    device_key = f"{device_type}_{room_id}_{command_key}"
-                    callback_id = f"{room_id}_{command_key}"
-                elif device_type == "thermostat":
-                    # Extract room info for Thermostat
-                    room_id = device_num >> 4
-                    device_key = f"{device_type}_{room_id}_{command_key}"
-                    callback_id = f"{room_id}_{command_key}"
-                else:
-                    # Single instance devices (fan, gas, energy, elevator, doorbell)
-                    device_key = f"{device_type}_{command_key}"
-                    callback_id = command_key
-                
-                # Create command state
-                command_state = {
-                    "data": packet.hex(),
-                    "device_id": f"cmd_{command_signature}",
-                    "device_num": device_num,
-                    "command": f"0x{command:02X}",
-                    "signature": command_signature
-                }
-                
-                # Check if new command
-                if device_key not in self._discovered_devices:
-                    self._discovered_devices.add(device_key)
-                    log_info(_LOGGER, device_type, "=> NEW COMMAND discovered: %s (signature: %s)", device_key, command_signature)
-                    
-                    # Call discovery callbacks
-                    for callback in self._device_discovery_callbacks:
-                        try:
-                            callback(device_type, callback_id)
-                        except Exception as err:
-                            _LOGGER.error("Error in discovery callback: %s", err)
-                
-                # Update state
-                self._device_states[device_key] = command_state
-                
-                # Call callback
-                if device_type in self._callbacks:
-                    log_debug(_LOGGER, device_type, "=> Calling callback for %s command with key=%s, state=%s", 
-                                 device_type, callback_id, command_state)
-                    self._callbacks[device_type](device_type, callback_id, command_state)
-                    log_debug(_LOGGER, device_type, "=> Callback completed for %s", device_key)
         
         # Check for ACK packets
         if device_id in ACK_HEADER:
@@ -934,6 +877,85 @@ class EzvilleRS485Client:
             else:
                 log_debug(_LOGGER, device_type, "=> Device 0x%02X in ACK_HEADER but command 0x%02X != expected 0x%02X",
                              device_id, command, expected_ack)
+        
+        # Handle command packets for known device types (not state packets)
+        # First check if this is a known device type
+        is_known_device = False
+        known_device_type = None
+        for dev_type, dev_config in RS485_DEVICE.items():
+            if "state" in dev_config and dev_config["state"]["id"] == device_id:
+                is_known_device = True
+                known_device_type = dev_type
+                break
+        
+        if is_known_device and known_device_type:
+            # This is a known device but not a state packet
+            device_type = known_device_type
+            
+            # Create unique key for this command
+            if device_type == "light":
+                room_id = device_num & 0x0F
+                # Calculate light number from device_num
+                light_num = ((device_num >> 4) & 0x0F) + 1
+                cmd_key = f"cmd_{device_num:02X}_{command:02X}"
+                device_key = f"{device_type}_{room_id}_{cmd_key}"
+                callback_id = f"{room_id}_{cmd_key}"
+                display_name = f"Light {room_id} {light_num} Cmd 0x{command:02X}"
+            elif device_type == "plug":
+                room_id = device_num >> 4
+                plug_num = (device_num & 0x0F) + 1
+                cmd_key = f"cmd_{device_num:02X}_{command:02X}"
+                device_key = f"{device_type}_{room_id}_{cmd_key}"
+                callback_id = f"{room_id}_{cmd_key}"
+                display_name = f"Plug {room_id} {plug_num} Cmd 0x{command:02X}"
+            elif device_type == "thermostat":
+                room_id = device_num >> 4
+                cmd_key = f"cmd_{device_num:02X}_{command:02X}"
+                device_key = f"{device_type}_{room_id}_{cmd_key}"
+                callback_id = f"{room_id}_{cmd_key}"
+                display_name = f"Thermostat {room_id} Cmd 0x{command:02X}"
+            else:
+                # Single instance devices
+                cmd_key = f"cmd_{device_num:02X}_{command:02X}"
+                device_key = f"{device_type}_{cmd_key}"
+                callback_id = cmd_key
+                if device_type == "fan":
+                    display_name = f"Ventilation Cmd 0x{command:02X}"
+                else:
+                    display_name = f"{device_type.title()} Cmd 0x{command:02X}"
+            
+            # Create command state
+            command_state = {
+                "data": packet.hex(),
+                "device_id": cmd_key,
+                "device_num": device_num,
+                "command": f"0x{command:02X}",
+                "display_name": display_name
+            }
+            
+            # Check if new command
+            if device_key not in self._discovered_devices:
+                self._discovered_devices.add(device_key)
+                log_info(_LOGGER, device_type, "=> NEW COMMAND discovered: %s (%s)", device_key, display_name)
+                
+                # Call discovery callbacks
+                for callback in self._device_discovery_callbacks:
+                    try:
+                        callback(device_type, callback_id)
+                    except Exception as err:
+                        _LOGGER.error("Error in discovery callback: %s", err)
+            
+            # Update state
+            self._device_states[device_key] = command_state
+            
+            # Call callback
+            if device_type in self._callbacks:
+                log_debug(_LOGGER, device_type, "=> Calling callback for %s command with key=%s, state=%s", 
+                             device_type, callback_id, command_state)
+                self._callbacks[device_type](device_type, callback_id, command_state)
+                log_debug(_LOGGER, device_type, "=> Callback completed for %s", device_key)
+            
+            return
         
         # Check for other known command patterns
         # Device 0x39 with command patterns
@@ -961,39 +983,16 @@ class EzvilleRS485Client:
             log_debug(_LOGGER, "light", "=> Light control response packet: device_num=0x%02X", device_num)
             return
         
-        # Check if this device is registered in RS485_DEVICE
-        is_known_device = False
-        for device_type, device_config in RS485_DEVICE.items():
-            if "state" in device_config and device_config["state"]["id"] == device_id:
-                is_known_device = True
-                break
+        # If we reach here, this is an unknown packet
+        # Create signature from first 4 bytes (8 hex characters)
+        signature = packet[:4].hex()
         
-        # If device is not known, handle as unknown
-        if not is_known_device:
-            # Create signature from first 4 bytes (8 hex characters)
-            signature = packet[:4].hex()
-            
-            # Check if value has changed
-            if signature in self._previous_mqtt_values and self._previous_mqtt_values[signature] == packet:
-                # Packet hasn't changed, skip logging and processing
-                return
-            
-            # Update previous value
-            if signature in self._previous_mqtt_values:
-                log_info(_LOGGER, "unknown", "Updated signature %s: %s", signature, ' '.join([f"{b:02x}" for b in packet[4:]]))
-            else:
-                log_info(_LOGGER, "unknown", "Created signature %s: %s", signature, ' '.join([f"{b:02x}" for b in packet[4:]]))
-            
-            self._previous_mqtt_values[signature] = packet
-            
-            # Unknown packet - handle it
-            log_info(_LOGGER, "unknown", "Unknown packet: %s | Device: 0x%02X | Num: 0x%02X (dec: %d) | Cmd: 0x%02X | State headers: %s | ACK headers: %s",
-                           packet.hex(), device_id, device_num, device_num, command,
-                           ','.join([f"0x{k:02X}" for k in STATE_HEADER.keys()]),
-                           ','.join([f"0x{k:02X}" for k in ACK_HEADER.keys()]))
-            
-            # Handle unknown devices
-            self._handle_unknown_device(packet)
+        # Unknown packet - handle it
+        log_info(_LOGGER, "unknown", "Unknown packet: %s | Device: 0x%02X | Num: 0x%02X | Cmd: 0x%02X",
+                       packet.hex(), device_id, device_num, command)
+        
+        # Handle unknown devices
+        self._handle_unknown_device(packet)
     
     def _handle_unknown_device(self, packet: bytes):
         """Handle unknown devices and create entries for them."""

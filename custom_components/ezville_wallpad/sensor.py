@@ -622,24 +622,13 @@ class EzvilleCommandSensor(CoordinatorEntity, SensorEntity):
         # Entity attributes
         self._attr_unique_id = f"{DOMAIN}_{device_key}_command"
         
-        # Extract signature from device_id
-        signature = "Unknown"
-        if device_id and isinstance(device_id, str) and device_id.startswith("cmd_"):
-            signature = device_id[4:].upper() if len(device_id) > 4 else "Unknown"
-        elif device_id and isinstance(device_id, str) and "_cmd_" in device_id:
-            # Format: room_cmd_signature
-            parts = device_id.split("_")
-            if len(parts) >= 3:
-                signature = parts[2].upper()
-        
-        # Create entity name based on device type and key
-        parts = device_key.split("_")
-        if device_type in ["light", "plug", "thermostat"] and len(parts) >= 2:
-            room_id = parts[1]
-            self._attr_name = f"{device_type.title()} {room_id} Command {signature}"
+        # Use display_name from device_info if available
+        state = device_info.get("state", {})
+        if "display_name" in state:
+            self._attr_name = state["display_name"]
         else:
-            # Single instance devices
-            self._attr_name = f"{device_type.title()} Command {signature}"
+            # Fallback to generic name
+            self._attr_name = f"{device_type.title()} Command"
         
         self._attr_icon = "mdi:console-network"
         
@@ -648,9 +637,8 @@ class EzvilleCommandSensor(CoordinatorEntity, SensorEntity):
         
         # Extract room info from device_key for proper grouping
         parts = device_key.split("_")
-        if device_type in ["light", "plug", "thermostat"] and len(parts) >= 3:
-            # For light_1_cmd_XXXXXXXX -> use light_1 as base key
-            # For thermostat_1_cmd_XXXXXXXX -> use thermostat_1 as base key
+        if device_type in ["light", "plug", "thermostat"] and len(parts) >= 2:
+            # For light_1_cmd_XX_XX -> use light_1 as base key
             base_device_key = f"{parts[0]}_{parts[1]}"
         else:
             # Single instance devices (fan, gas, energy, elevator, doorbell)
