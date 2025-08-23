@@ -38,11 +38,6 @@ async def async_setup_entry(
     entities = []
     for device_key, device_info in coordinator.devices.items():
         if device_info["device_type"] == "thermostat":
-            # Skip command sensors - they should be handled by sensor platform
-            device_id = device_info.get("device_id", "")
-            if isinstance(device_id, str) and device_id.startswith("cmd_"):
-                _LOGGER.debug("Skipping command sensor %s in climate platform", device_key)
-                continue
             entities.append(
                 EzvilleThermostat(
                     coordinator,
@@ -64,11 +59,6 @@ async def async_setup_entry(
     def async_add_thermostats(device_key: str, device_info: dict):
         """Add new thermostat entities."""
         if device_info["device_type"] == "thermostat" and device_key not in added_devices:
-            # Skip command sensors - they should be handled by sensor platform
-            device_id = device_info.get("device_id", "")
-            if isinstance(device_id, str) and device_id.startswith("cmd_"):
-                _LOGGER.debug("Skipping command sensor %s in climate platform", device_key)
-                return
             added_devices.add(device_key)
             entity = EzvilleThermostat(coordinator, device_key, device_info)
             async_add_entities([entity])

@@ -47,11 +47,6 @@ async def async_setup_entry(
     # Add existing devices
     for device_key, device_info in coordinator.devices.items():
         if device_info["device_type"] == "light":
-            # Skip command sensors - they should be handled by sensor platform
-            device_id = device_info.get("device_id", "")
-            if isinstance(device_id, str) and device_id.startswith("cmd_"):
-                _LOGGER.debug("Skipping command sensor %s in light platform", device_key)
-                continue
             async_add_light(device_key, device_info)
     
     # Register callback for new devices
@@ -62,11 +57,6 @@ async def async_setup_entry(
         devices_copy = dict(coordinator.devices)
         for device_key, device_info in devices_copy.items():
             if device_info["device_type"] == "light" and device_key not in added_devices:
-                # Skip command sensors - they should be handled by sensor platform
-                device_id = device_info.get("device_id", "")
-                if isinstance(device_id, str) and device_id.startswith("cmd_"):
-                    _LOGGER.debug("Skipping command sensor %s in light platform", device_key)
-                    continue
                 async_add_light(device_key, device_info)
     
     # Listen for coordinator updates

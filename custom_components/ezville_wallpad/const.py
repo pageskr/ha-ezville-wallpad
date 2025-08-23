@@ -155,6 +155,10 @@ RS485_DEVICE = {
         "open": {"id": 0x40, "cmd": 0x22, "ack": 0xC2},
         "cancel": {"id": 0x40, "cmd": 0x11, "ack": 0xC1},
     },
+    "unknown_60": {
+        "state": {"id": 0x60, "cmd": 0x81},
+        "last": {},
+    },
 }
 
 # State header mapping

@@ -33,11 +33,6 @@ async def async_setup_entry(
     entities = []
     for device_key, device_info in coordinator.devices.items():
         if device_info["device_type"] == "gas":
-            # Skip command sensors - they should be handled by sensor platform
-            device_id = device_info.get("device_id", "")
-            if isinstance(device_id, str) and device_id.startswith("cmd_"):
-                _LOGGER.debug("Skipping command sensor %s in valve platform", device_key)
-                continue
             entities.append(
                 EzvilleGasValve(
                     coordinator,

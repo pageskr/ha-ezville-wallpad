@@ -82,7 +82,7 @@ class EzvilleWallpadCoordinator(DataUpdateCoordinator):
         # Always include all capabilities for device discovery
         self.capabilities = [
             "light", "plug", "thermostat", "fan", "gas", 
-            "energy", "elevator", "doorbell", "unknown"
+            "energy", "elevator", "doorbell"
         ]
         
         _LOGGER.info("Initializing coordinator with capabilities: %s", self.capabilities)
@@ -297,18 +297,15 @@ class EzvilleWallpadCoordinator(DataUpdateCoordinator):
             _LOGGER.info("Discovered new device: %s (type: %s, id: %s)", device_key, device_type, device_id)
             
             # Parse device ID to get display name
-            if isinstance(device_id, str) and device_id.startswith("cmd_"):
-                # Command sensor - display_name will be set later
-                display_name = f"{device_type.title()} Command"
-            elif device_type in ["light", "plug"] and isinstance(device_id, str) and "_" in device_id:
-                # Normal device format: room_num
+            if device_type in ["light", "plug"] and isinstance(device_id, str) and "_" in device_id:
+                # For light_1_2 format
                 parts = device_id.split("_")
                 display_name = f"{device_type.title()} {parts[0]} {parts[1]}"
             elif device_type == "thermostat" and device_id:
                 display_name = f"{device_type.title()} {device_id}"
             elif device_type == "unknown":
                 # device_id is the signature (8 hex characters)
-                display_name = f"Unknown {device_id.upper()}"
+                display_name = f"Unknown {device_id}"
             else:
                 # Single instance devices
                 display_name = device_type.title()
@@ -355,12 +352,8 @@ class EzvilleWallpadCoordinator(DataUpdateCoordinator):
         
         platforms_needed = set()
         
-        if device_type == "light":
-            if Platform.LIGHT not in self._platform_loaded:
-                platforms_needed.add(Platform.LIGHT)
-            # Also load sensor platform for command sensors
-            if Platform.SENSOR not in self._platform_loaded:
-                platforms_needed.add(Platform.SENSOR)
+        if device_type == "light" and Platform.LIGHT not in self._platform_loaded:
+            platforms_needed.add(Platform.LIGHT)
         elif device_type == "plug":
             if Platform.SWITCH not in self._platform_loaded:
                 platforms_needed.add(Platform.SWITCH)
@@ -369,32 +362,20 @@ class EzvilleWallpadCoordinator(DataUpdateCoordinator):
         elif device_type == "thermostat":
             if Platform.CLIMATE not in self._platform_loaded:
                 platforms_needed.add(Platform.CLIMATE)
-            # Also load sensor platform for temperature sensors and command sensors
+            # Also load sensor platform for temperature sensors
             if Platform.SENSOR not in self._platform_loaded:
                 platforms_needed.add(Platform.SENSOR)
-        elif device_type == "fan":
-            if Platform.FAN not in self._platform_loaded:
-                platforms_needed.add(Platform.FAN)
-            # Also load sensor platform for command sensors
-            if Platform.SENSOR not in self._platform_loaded:
-                platforms_needed.add(Platform.SENSOR)
-        elif device_type == "gas":
-            if Platform.VALVE not in self._platform_loaded:
-                platforms_needed.add(Platform.VALVE)
-            # Also load sensor platform for command sensors
-            if Platform.SENSOR not in self._platform_loaded:
-                platforms_needed.add(Platform.SENSOR)
-        elif device_type == "energy":
-            if Platform.SENSOR not in self._platform_loaded:
-                platforms_needed.add(Platform.SENSOR)
+        elif device_type == "fan" and Platform.FAN not in self._platform_loaded:
+            platforms_needed.add(Platform.FAN)
+        elif device_type == "gas" and Platform.VALVE not in self._platform_loaded:
+            platforms_needed.add(Platform.VALVE)
+        elif device_type == "energy" and Platform.SENSOR not in self._platform_loaded:
+            platforms_needed.add(Platform.SENSOR)
         elif device_type in ["elevator", "doorbell"]:
             if Platform.BUTTON not in self._platform_loaded:
                 platforms_needed.add(Platform.BUTTON)
             if device_type == "doorbell" and Platform.BINARY_SENSOR not in self._platform_loaded:
                 platforms_needed.add(Platform.BINARY_SENSOR)
-            # Also load sensor platform for command sensors
-            if Platform.SENSOR not in self._platform_loaded:
-                platforms_needed.add(Platform.SENSOR)
         elif device_type == "unknown" and Platform.SENSOR not in self._platform_loaded:
             # Use sensor platform for unknown devices
             platforms_needed.add(Platform.SENSOR)
@@ -546,18 +527,15 @@ class EzvilleWallpadCoordinator(DataUpdateCoordinator):
             log_info(_LOGGER, device_type, "==> New device detected via state update: %s", device_key)
             
             # Parse device ID to get display name
-            if isinstance(device_id, str) and device_id.startswith("cmd_"):
-                # Command sensor - use display_name from state if available
-                display_name = state.get("display_name", f"{device_type.title()} Command")
-            elif device_type in ["light", "plug"] and isinstance(device_id, str) and "_" in device_id:
-                # Normal device format: room_num
+            if device_type in ["light", "plug"] and isinstance(device_id, str) and "_" in device_id:
+                # For light_1_2 format
                 parts = device_id.split("_")
                 display_name = f"{device_type.title()} {parts[0]} {parts[1]}"
             elif device_type == "thermostat" and device_id:
                 display_name = f"{device_type.title()} {device_id}"
             elif device_type == "unknown":
                 # device_id is the signature (8 hex characters)  
-                display_name = f"Unknown {device_id.upper()}"
+                display_name = f"Unknown {device_id}"
             else:
                 # Single instance devices
                 display_name = device_type.title()
