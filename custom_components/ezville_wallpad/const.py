@@ -25,27 +25,19 @@ def get_device_type_from_packet(packet):
     
     device_id = packet[1]
     
-    # Check packet prefix (first 2 bytes)
-    prefix = packet[:2].hex().upper()
+    # Map device ID to device type
+    device_id_map = {
+        0x0E: "light",
+        0x39: "plug",
+        0x36: "thermostat",
+        0x32: "fan",
+        0x12: "gas",
+        0x30: "energy",
+        0x33: "elevator",
+        0x40: "doorbell",
+    }
     
-    if prefix.startswith("F70E"):
-        return "light"
-    elif prefix.startswith("F739"):
-        return "plug"
-    elif prefix.startswith("F736"):
-        return "thermostat"
-    elif prefix.startswith("F732"):
-        return "fan"
-    elif prefix.startswith("F712"):
-        return "gas"
-    elif prefix.startswith("F730"):
-        return "energy"
-    elif prefix.startswith("F733"):
-        return "elevator"
-    elif prefix.startswith("F740"):
-        return "doorbell"
-    else:
-        return "unknown"
+    return device_id_map.get(device_id, "unknown")
 
 def log_debug(logger, device_type, message, *args):
     """Log debug message if logging is enabled for the device type."""
@@ -154,10 +146,6 @@ RS485_DEVICE = {
         "talk": {"id": 0x40, "cmd": 0x12, "ack": 0xC2},
         "open": {"id": 0x40, "cmd": 0x22, "ack": 0xC2},
         "cancel": {"id": 0x40, "cmd": 0x11, "ack": 0xC1},
-    },
-    "unknown_60": {
-        "state": {"id": 0x60, "cmd": 0x81},
-        "last": {},
     },
 }
 

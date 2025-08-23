@@ -32,11 +32,31 @@ class EzvilleWallpadDevice(CoordinatorEntity):
     @property
     def device_info(self) -> DeviceInfo:
         """Return device information."""
-        device_type = self._device_key.split("_")[0]
         parts = self._device_key.split("_")
+        device_type = parts[0]
+        
+        # Check if this is a CMD sensor
+        is_cmd_sensor = "cmd" in parts
         
         # 기기별 이름 생성 및 식별자 로직
-        if device_type == "light":
+        if is_cmd_sensor:
+            # CMD sensor - group with base device
+            # Format: light_1_2_cmd_41 -> group with light_1
+            # Format: doorbell_cmd_41 -> group with doorbell
+            if device_type in ["light", "plug"]:
+                room_id = parts[1] if len(parts) > 1 else "1"
+                device_name = f"{device_type.title()} {room_id}"
+                device_identifier = f"{device_type}_{room_id}"
+            elif device_type == "thermostat":
+                room_id = parts[1] if len(parts) > 1 else "1"
+                # All thermostats grouped together
+                device_name = "Thermostat"
+                device_identifier = "thermostat"
+            else:
+                # Single devices (fan, gas, energy, elevator, doorbell)
+                device_name = self._get_device_display_name(device_type)
+                device_identifier = device_type
+        elif device_type == "light":
             # light_1_2 -> Light 1 기기로 그룹핑
             room_id = parts[1] if len(parts) > 1 else "1"
             device_name = f"Light {room_id}"
@@ -66,14 +86,9 @@ class EzvilleWallpadDevice(CoordinatorEntity):
             device_name = "Doorbell"
             device_identifier = self._device_key
         elif device_type == "unknown":
-            # Each unknown signature gets its own device
-            if len(parts) > 1:
-                signature = parts[1]  # e.g., "f7300301" from "unknown_f7300301"
-                device_name = f"Unknown Device {signature.upper()}"
-                device_identifier = f"unknown_{signature}"
-            else:
-                device_name = "Unknown Device"
-                device_identifier = "unknown"
+            # All unknown devices group under single Unknown device
+            device_name = "Unknown"
+            device_identifier = "unknown"
         else:
             device_name = f"Ezville Wallpad {self._device_key}"
             device_identifier = self._device_key
@@ -89,6 +104,21 @@ class EzvilleWallpadDevice(CoordinatorEntity):
             suggested_area=self._get_suggested_area(device_type),
         )
 
+    def _get_device_display_name(self, device_type: str) -> str:
+        """Get display name for device type."""
+        display_names = {
+            "light": "Light",
+            "plug": "Plug",
+            "thermostat": "Thermostat",
+            "fan": "Ventilation",
+            "gas": "Gas",
+            "energy": "Energy",
+            "elevator": "Elevator",
+            "doorbell": "Doorbell",
+            "unknown": "Unknown",
+        }
+        return display_names.get(device_type, device_type.title())
+    
     def _get_suggested_area(self, device_type: str) -> Optional[str]:
         """Get suggested area for device type."""
         area_mapping = {
@@ -108,7 +138,13 @@ class EzvilleWallpadDevice(CoordinatorEntity):
     def icon(self) -> str:
         """Return the icon for the entity."""
         # Use LG air conditioner icon or generic LG icon
-        device_type = self._device_key.split("_")[0]
+        parts = self._device_key.split("_")
+        device_type = parts[0]
+        
+        # Check if this is a CMD sensor
+        if "cmd" in parts:
+            return "mdi:console-network"
+        
         icons = {
             "light": "mdi:lightbulb",
             "plug": "mdi:power-socket-de", 

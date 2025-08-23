@@ -78,6 +78,15 @@ async def async_setup_entry(
             else:
                 _LOGGER.debug("Unknown device sensor %s already added", device_key)
         
+        # Add CMD sensor
+        if device_type == "cmd_sensor":
+            if f"{device_key}_state" not in added_devices:
+                added_devices.add(f"{device_key}_state")
+                entities.append(EzvilleCmdSensor(coordinator, device_key, device_info))
+                _LOGGER.info("Added CMD sensor for %s with device_info: %s", device_key, device_info)
+            else:
+                _LOGGER.debug("CMD sensor %s already added", device_key)
+        
         if entities:
             _LOGGER.info("Adding %d entities to Home Assistant", len(entities))
             async_add_entities(entities)
@@ -88,7 +97,7 @@ async def async_setup_entry(
     _LOGGER.info("Adding existing devices to sensor platform")
     for device_key, device_info in coordinator.devices.items():
         _LOGGER.debug("Checking device %s with type %s", device_key, device_info.get("device_type"))
-        if device_info["device_type"] in ["plug", "energy", "thermostat", "unknown"]:
+        if device_info["device_type"] in ["plug", "energy", "thermostat", "unknown", "cmd_sensor"]:
             async_add_sensors(device_key, device_info)
     
     # Register callback for new devices
@@ -99,7 +108,7 @@ async def async_setup_entry(
         # Create a copy of the devices to avoid dictionary changed size during iteration
         devices_copy = dict(coordinator.devices)
         for device_key, device_info in devices_copy.items():
-            if device_info["device_type"] in ["plug", "energy", "thermostat", "unknown"]:
+            if device_info["device_type"] in ["plug", "energy", "thermostat", "unknown", "cmd_sensor"]:
                 async_add_sensors(device_key, device_info)
     
     # Listen for coordinator updates
@@ -482,6 +491,116 @@ class EzvilleThermostatTargetSensor(CoordinatorEntity, SensorEntity):
             self._handle_coordinator_update
         )
         _LOGGER.debug("Thermostat target temperature sensor %s removed from hass", self._attr_name)
+
+
+class EzvilleCmdSensor(CoordinatorEntity, SensorEntity):
+    """Ezville CMD Sensor for non-state packets."""
+
+    def __init__(self, coordinator: EzvilleWallpadCoordinator, device_key: str, device_info: dict):
+        """Initialize the sensor."""
+        super().__init__(coordinator)
+        
+        self._device_key = device_key
+        self._device_info = device_info
+        base_device_type = device_info.get("base_device_type", "")
+        
+        # Entity attributes
+        self._attr_unique_id = f"{DOMAIN}_{device_key}_state"
+        self._attr_name = device_info.get("name", "Unknown CMD")
+        self._attr_icon = "mdi:console-network"
+        
+        # Device info - group with base device type
+        from .device import EzvilleWallpadDevice
+        base_device = EzvilleWallpadDevice(coordinator, device_key, self._attr_unique_id, self._attr_name)
+        # Override device name to group with base device
+        if base_device_type:
+            device_info = dict(base_device.device_info)
+            # Parse device key to get room info for grouping
+            parts = device_key.split("_")
+            if base_device_type in ["light", "plug", "thermostat"] and len(parts) >= 2:
+                room_id = parts[1]
+                device_info["name"] = f"{base_device_type.title()} Room {room_id}"
+            else:
+                device_info["name"] = base_device_type.title()
+            self._attr_device_info = device_info
+        else:
+            self._attr_device_info = base_device.device_info
+        
+        # Add timestamp attributes
+        import time
+        self._first_detected = time.time()
+        self._last_detected = time.time()
+        
+        _LOGGER.debug("Initialized CMD sensor: %s (base_type: %s)", self._attr_name, base_device_type)
+
+    @property
+    def native_value(self) -> Optional[str]:
+        """Return the state of the sensor."""
+        device = self.coordinator.devices.get(self._device_key, {})
+        state = device.get("state", {})
+        # Return the raw data as string
+        return state.get("data", "No data")
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return entity specific state attributes."""
+        device = self.coordinator.devices.get(self._device_key, {})
+        state = device.get("state", {})
+        
+        import time
+        from datetime import datetime
+        
+        # Update last detected time
+        self._last_detected = time.time()
+        
+        attributes = {
+            "device_id": state.get("device_id", "Unknown"),
+            "device_num": state.get("device_num", 0),
+            "command": state.get("command", "Unknown"),
+            "raw_data": state.get("raw_data", "No data"),
+            "packet_length": state.get("packet_length", 0),
+            "first_detected": datetime.fromtimestamp(self._first_detected).isoformat(),
+            "last_detected": datetime.fromtimestamp(self._last_detected).isoformat()
+        }
+        
+        return attributes
+
+    @property
+    def available(self) -> bool:
+        """Return if entity is available."""
+        return self._device_key in self.coordinator.devices
+
+    def _handle_coordinator_update(self) -> None:
+        """Handle updated data from the coordinator."""
+        # Update last detected time
+        import time
+        self._last_detected = time.time()
+        
+        # Schedule update safely from any thread
+        if hasattr(self, 'hass') and self.hass:
+            self.hass.loop.call_soon_threadsafe(self.async_write_ha_state)
+        else:
+            _LOGGER.debug("===> Cannot update state for %s - hass not available", self._attr_name)
+
+    async def async_added_to_hass(self) -> None:
+        """When entity is added to hass."""
+        await super().async_added_to_hass()
+        # Register for direct updates
+        self.coordinator.register_entity_callback(
+            self._device_key,
+            self._handle_coordinator_update
+        )
+        _LOGGER.debug("CMD sensor %s added to hass", self._attr_name)
+
+    async def async_will_remove_from_hass(self) -> None:
+        """When entity will be removed from hass."""
+        await super().async_will_remove_from_hass()
+        # Unregister callback
+        self.coordinator.unregister_entity_callback(
+            self._device_key,
+            self._handle_coordinator_update
+        )
+        _LOGGER.debug("CMD sensor %s removed from hass", self._attr_name)
 
 
 class EzvilleUnknownSensor(CoordinatorEntity, SensorEntity):

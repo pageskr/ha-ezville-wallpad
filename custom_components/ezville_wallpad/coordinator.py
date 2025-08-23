@@ -129,9 +129,18 @@ class EzvilleWallpadCoordinator(DataUpdateCoordinator):
         _LOGGER.debug("Registered callback for unknown devices")
         
         # Unknown devices will be created dynamically when discovered
+        _LOGGER.info("Unknown devices will be created dynamically when discovered")
         
-        # Don't create default unknown device - let it be created dynamically
-        _LOGGER.debug("Unknown devices will be created dynamically when discovered")
+        # Create Unknown device group if not exists
+        unknown_device_key = "unknown"
+        if unknown_device_key not in self.devices:
+            self.devices[unknown_device_key] = {
+                "device_type": "unknown",
+                "device_id": "system",
+                "name": "Unknown",
+                "state": {}
+            }
+            _LOGGER.info("Created Unknown device group: %s", unknown_device_key)
 
     def _initialize_default_devices(self):
         """Initialize default devices for enabled capabilities."""
@@ -481,6 +490,47 @@ class EzvilleWallpadCoordinator(DataUpdateCoordinator):
             _LOGGER.info("==> Unknown device callback: device_type=%s, device_id=%s, state=%s",
                          device_type, device_id, state)
         
+        # Check if this is a CMD sensor
+        if "_cmd" in device_type:
+            # This is a CMD sensor update
+            base_device_type = device_type.replace("_cmd", "")
+            device_key = device_id  # For CMD sensors, device_id is already the full key
+            
+            _LOGGER.info("==> CMD sensor callback: base_type=%s, device_key=%s, state=%s",
+                         base_device_type, device_key, state)
+            
+            # Create device entry for CMD sensor
+            if device_key not in self.devices:
+                self.devices[device_key] = {
+                    "device_type": "cmd_sensor",
+                    "base_device_type": base_device_type,
+                    "device_id": device_id,
+                    "name": self._get_cmd_sensor_name(base_device_type, device_key),
+                    "state": state
+                }
+                
+                # Load sensor platform if needed
+                from homeassistant.const import Platform
+                if Platform.SENSOR not in self._platform_loaded:
+                    self._platform_loaded.add(Platform.SENSOR)
+                    self.hass.async_create_task(
+                        self.hass.config_entries.async_forward_entry_setup(
+                            self.config_entry, Platform.SENSOR
+                        )
+                    )
+            else:
+                # Update existing device
+                self.devices[device_key]["state"] = state
+            
+            # Trigger coordinator update
+            if threading.current_thread() is threading.main_thread():
+                self.async_set_updated_data(self.devices)
+            else:
+                self.hass.loop.call_soon_threadsafe(
+                    lambda: self.async_set_updated_data(self.devices)
+                )
+            return
+        
         # Get logging enabled device types from options
         log_device_types = self.options.get("logging_device_types", [])
         
@@ -622,6 +672,33 @@ class EzvilleWallpadCoordinator(DataUpdateCoordinator):
         from .device import EzvilleWallpadDevice
         base_device = EzvilleWallpadDevice(self, device_key, f"{DOMAIN}_{device_key}", "temp")
         return base_device.device_info
+    
+    def _get_cmd_sensor_name(self, base_device_type: str, device_key: str) -> str:
+        """Get display name for CMD sensor."""
+        # Parse device key to extract information
+        parts = device_key.split("_")
+        
+        if base_device_type in ["light", "plug"]:
+            # Format: light_1_2_cmd_41 or plug_1_2_cmd_41
+            if len(parts) >= 5 and parts[3] == "cmd":
+                room_id = parts[1]
+                device_num = parts[2]
+                cmd = parts[4].upper()
+                return f"{base_device_type.title()} {room_id} {device_num} Cmd 0x{cmd}"
+        elif base_device_type == "thermostat":
+            # Format: thermostat_1_cmd_41
+            if len(parts) >= 4 and parts[2] == "cmd":
+                room_id = parts[1]
+                cmd = parts[3].upper()
+                return f"{base_device_type.title()} {room_id} Cmd 0x{cmd}"
+        else:
+            # Format: doorbell_cmd_41, elevator_cmd_41, etc.
+            if len(parts) >= 3 and parts[1] == "cmd":
+                cmd = parts[2].upper()
+                return f"{base_device_type.title()} Cmd 0x{cmd}"
+        
+        # Fallback
+        return device_key.replace("_", " ").title()
     
     def get_platforms_to_load(self) -> set:
         """Get platforms that need to be loaded."""

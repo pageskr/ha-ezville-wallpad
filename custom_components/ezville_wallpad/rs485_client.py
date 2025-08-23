@@ -925,14 +925,103 @@ class EzvilleRS485Client:
         
         self._previous_mqtt_values[signature] = packet
         
-        # Unknown packet - handle it
-        log_info(_LOGGER, "unknown", "Unknown packet: %s | Device: 0x%02X | Num: 0x%02X (dec: %d) | Cmd: 0x%02X | State headers: %s | ACK headers: %s",
-                       packet.hex(), device_id, device_num, device_num, command,
-                       ','.join([f"0x{k:02X}" for k in STATE_HEADER.keys()]),
-                       ','.join([f"0x{k:02X}" for k in ACK_HEADER.keys()]))
+        # Check if this is a known device but non-state command
+        known_device_type = None
+        for device_type, device_config in RS485_DEVICE.items():
+            if "state" in device_config and device_config["state"]["id"] == device_id:
+                known_device_type = device_type
+                break
         
-        # Handle unknown devices
-        self._handle_unknown_device(packet)
+        if known_device_type:
+            # Known device, non-state command - create Cmd sensor
+            self._handle_device_cmd_packet(known_device_type, packet)
+        else:
+            # Unknown packet - handle it
+            log_info(_LOGGER, "unknown", "Unknown packet: %s | Device: 0x%02X | Num: 0x%02X (dec: %d) | Cmd: 0x%02X | State headers: %s | ACK headers: %s",
+                           packet.hex(), device_id, device_num, device_num, command,
+                           ','.join([f"0x{k:02X}" for k in STATE_HEADER.keys()]),
+                           ','.join([f"0x{k:02X}" for k in ACK_HEADER.keys()]))
+            
+            # Handle unknown devices
+            self._handle_unknown_device(packet)
+    
+    def _handle_device_cmd_packet(self, device_type: str, packet: bytes):
+        """Handle non-state command packets for known devices."""
+        if len(packet) < 4:
+            return
+        
+        device_id = packet[1]
+        device_num = packet[2]
+        command = packet[3]
+        
+        # Create sensor name based on device type
+        if device_type in ["light", "plug"]:
+            # Extract room and device number
+            if device_type == "light":
+                room_id = device_num & 0x0F
+                # Format: "Light 1 1 Cmd 0x??" where first 1 is room, second 1 is device number within room
+                # For grouping, we'll use a simple incrementing number for each unique device_num
+                device_name = f"{device_type.title()} {room_id} {room_id} Cmd 0x{command:02X}"
+                device_key = f"{device_type}_{room_id}_{room_id}_cmd_{command:02X}"
+            else:  # plug
+                room_id = device_num >> 4
+                # Format: "Plug 1 1 Cmd 0x??" 
+                device_name = f"{device_type.title()} {room_id} {room_id} Cmd 0x{command:02X}"
+                device_key = f"{device_type}_{room_id}_{room_id}_cmd_{command:02X}"
+        elif device_type == "thermostat":
+            room_id = device_num >> 4
+            device_name = f"{device_type.title()} {room_id} Cmd 0x{command:02X}"
+            device_key = f"{device_type}_{room_id}_cmd_{command:02X}"
+        else:
+            # Single devices
+            device_name = f"{device_type.title()} Cmd 0x{command:02X}"
+            device_key = f"{device_type}_cmd_{command:02X}"
+        
+        # Create state data
+        state = {
+            "device_id": f"0x{device_id:02X}",
+            "device_num": device_num,
+            "command": f"0x{command:02X}",
+            "data": packet.hex(),
+            "packet_length": len(packet)
+        }
+        
+        # Add raw data for packets with payload
+        if len(packet) > 4:
+            state["raw_data"] = ' '.join([f"{b:02x}" for b in packet[4:-2]])
+        
+        log_debug(_LOGGER, device_type, "=> CMD packet for %s: %s", device_name, packet.hex())
+        
+        # Check if new cmd sensor
+        if device_key not in self._discovered_devices:
+            self._discovered_devices.add(device_key)
+            log_info(_LOGGER, device_type, "=> NEW CMD SENSOR discovered: %s", device_key)
+            
+            # Call discovery callbacks
+            for callback in self._device_discovery_callbacks:
+                try:
+                    callback(f"{device_type}_cmd", device_key)
+                except Exception as err:
+                    log_error(_LOGGER, device_type, "Error in discovery callback: %s", err)
+        
+        # Update state
+        old_full_state = self._device_states.get(device_key, {}).copy()
+        self._device_states[device_key] = state
+        
+        # Call callback if registered
+        callback_type = f"{device_type}_cmd"
+        if callback_type in self._callbacks:
+            log_debug(_LOGGER, device_type, "=> Calling callback for %s with key=%s, state=%s", 
+                         callback_type, device_key, state)
+            self._callbacks[callback_type](callback_type, device_key, state)
+            log_debug(_LOGGER, device_type, "=> Callback completed for %s", device_key)
+        else:
+            # Try to use the device type callback
+            if device_type in self._callbacks:
+                log_debug(_LOGGER, device_type, "=> Calling device callback for cmd sensor %s with key=%s, state=%s", 
+                             device_type, device_key, state)
+                self._callbacks[device_type](callback_type, device_key, state)
+                log_debug(_LOGGER, device_type, "=> Device callback completed for cmd sensor %s", device_key)
     
     def _handle_unknown_device(self, packet: bytes):
         """Handle unknown devices and create entries for them."""
@@ -942,14 +1031,6 @@ class EzvilleRS485Client:
         device_id = packet[1]
         device_num = packet[2]
         command = packet[3]
-        
-        # Skip known device types
-        if device_id in STATE_HEADER or device_id in ACK_HEADER:
-            return
-        
-        # Skip some common control packets
-        if command == 0x01 and device_id in [0x0E, 0x32, 0x36, 0x39, 0x60]:
-            return
         
         # Create signature from first 4 bytes (8 hex characters)
         signature = packet[:4].hex()
