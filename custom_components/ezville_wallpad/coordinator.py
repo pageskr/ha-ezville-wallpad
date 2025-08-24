@@ -130,17 +130,6 @@ class EzvilleWallpadCoordinator(DataUpdateCoordinator):
         
         # Unknown devices will be created dynamically when discovered
         _LOGGER.info("Unknown devices will be created dynamically when discovered")
-        
-        # Create Unknown device group if not exists
-        unknown_device_key = "unknown"
-        if unknown_device_key not in self.devices:
-            self.devices[unknown_device_key] = {
-                "device_type": "unknown",
-                "device_id": "system",
-                "name": "Unknown",
-                "state": {}
-            }
-            _LOGGER.info("Created Unknown device group: %s", unknown_device_key)
 
     def _initialize_default_devices(self):
         """Initialize default devices for enabled capabilities."""

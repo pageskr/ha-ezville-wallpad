@@ -494,10 +494,17 @@ class EzvilleRS485Client:
         device_num = packet[2]
         command = packet[3]
         
-        # Get device type for logging
-        device_type = get_device_type_from_packet(packet)
+        # Step 1: Check if this is a known device type
+        known_device_type = None
+        for device_type, device_config in RS485_DEVICE.items():
+            if "state" in device_config and device_config["state"]["id"] == device_id:
+                known_device_type = device_type
+                break
         
-        # Log packet analysis based on device type
+        # Get device type for logging
+        device_type = known_device_type if known_device_type else "unknown"
+        
+        # Log packet analysis
         if device_id == 0x0E:  # Light device
             room_id = device_num & 0x0F
             log_info(_LOGGER, device_type, "Packet Analysis - Device ID: 0x%02X(Light), Room: 0x%02X(%d), Cmd: 0x%02X, Packet: %s", 
@@ -513,437 +520,371 @@ class EzvilleRS485Client:
             log_info(_LOGGER, device_type, "Packet Analysis - Device ID: 0x%02X, Num: 0x%02X(%d), Cmd: 0x%02X, Packet: %s", 
                          device_id, device_num, device_num, command, packet.hex())
         
-        # Check if this is a state packet
-        if device_id in STATE_HEADER:
-            device_type, expected_cmd = STATE_HEADER[device_id]
-            if command == expected_cmd:
-                # State packet - removed redundant log
-                
-                # Parse state data based on device type
-                state_data = self._parse_state(device_type, packet)
-                # For light, plug, thermostat - they are handled inline below
-                if device_type in ["light", "plug", "thermostat"]:
-                    # Device identification based on type
-                    if device_type == "light":
-                        # Extract room number from lower 4 bits
-                        room_id = int(device_num & 0x0F)
-                        
-                        if len(packet) > 4:
-                            # Light count is 5th byte minus 1
-                            light_count = packet[4] - 1
-                            log_info(_LOGGER, device_type, "=> Light state: Room %d (device_num=0x%02X), Light count: %d", room_id, device_num, light_count)
-                            
-                            # Process each light in the room
-                            for light_num in range(1, min(light_count + 1, 4)):  # Max 3 lights
-                                # Light states start from 7th byte (index 6)
-                                if len(packet) > 6 + light_num - 1:
-                                    device_key = f"{device_type}_{room_id}_{light_num}"
-                                    light_state = (packet[6 + light_num - 1] & 1) == 1
-                                    
-                                    individual_state = {"power": light_state}
-                                    
-                                    # Check if state changed
-                                    old_state_dict = self._device_states.get(device_key, {})
-                                    old_power = old_state_dict.get("power")
-                                    changes = []
-                                    
-                                    if old_power != light_state:
-                                        changes.append(f"switch: {'On' if old_power else 'Off' if old_power is not None else 'Unknown'} → {'On' if light_state else 'Off'}")
-                                    
-                                    if changes:
-                                        log_info(_LOGGER, device_type, "=> Light %d %d state: {'switch': '%s'}, changes: %s, entity_key: %s [UPDATED]", 
-                                                   room_id, light_num, "ON" if light_state else "OFF", ", ".join(changes), device_key)
-                                    else:
-                                        log_debug(_LOGGER, device_type, "=> Light %d %d state: {'switch': '%s'} [no change]", 
-                                                   room_id, light_num, "ON" if light_state else "OFF")
-                                    
-                                    # Check if new device
-                                    if device_key not in self._discovered_devices:
-                                        self._discovered_devices.add(device_key)
-                                        _LOGGER.info("=> NEW DEVICE discovered: %s", device_key)
-                                        
-                                        # Call discovery callbacks
-                                        for callback in self._device_discovery_callbacks:
-                                            try:
-                                                callback(device_type, f"{room_id}_{light_num}")
-                                            except Exception as err:
-                                                _LOGGER.error("Error in discovery callback: %s", err)
-                                    
-                                    # Update state
-                                    old_full_state = self._device_states.get(device_key, {}).copy()
-                                    self._device_states[device_key] = individual_state
-                                    
-                                    # Call callback
-                                    if device_type in self._callbacks:
-                                        log_debug(_LOGGER, device_type, "=> Calling callback for %s with key=%s, state=%s", 
-                                                     device_type, f"{room_id}_{light_num}", individual_state)
-                                        self._callbacks[device_type](device_type, f"{room_id}_{light_num}", 
-                                                                   individual_state)
-                                        log_debug(_LOGGER, device_type, "=> Callback completed for %s", device_key)
-                    
-                    elif device_type == "plug":
-                        # Extract room number from upper 4 bits
-                        room_id = int(device_num >> 4)
-                        
-                        if len(packet) > 5:
-                            data_length = packet[4]
-                            # Plug count is data length divided by 3
-                            plug_count = int(data_length / 3)
-                            log_info(_LOGGER, device_type, "=> Plug state: Room %d (device_num=0x%02X), Data length: %d bytes, Plug count: %d", room_id, device_num, data_length, plug_count)
-                            
-                            # Process each plug
-                            for plug_num in range(1, min(plug_count + 1, 3)):  # Max 2 plugs
-                                # Calculate index for this plug's data
-                                base_idx = plug_num * 3 + 3  # Start from index for each plug
-                                if len(packet) > base_idx + 2:
-                                    device_key = f"{device_type}_{room_id}_{plug_num}"
-                                    
-                                    # Parse plug data
-                                    # Power state is bit 4 of the first byte
-                                    power_state = (packet[base_idx] & 0x10) != 0
-                                    
-                                    # Power usage calculation
-                                    power_high = format((packet[base_idx] & 0x0F) | (packet[base_idx + 1] << 4) | (packet[base_idx + 2] >> 4), 'x')
-                                    power_decimal = format(packet[base_idx + 2] & 0x0F, 'x')
-                                    power_usage_str = f"{power_high}.{power_decimal}"
-                                    
-                                    # Convert to float
-                                    try:
-                                        power_usage = float(power_usage_str)
-                                    except:
-                                        power_usage = 0.0
-                                    
-                                    individual_state = {
-                                        "power": power_state,
-                                        "power_usage": power_usage
-                                    }
-                                    
-                                    # Check if state changed
-                                    old_state = self._device_states.get(device_key, {})
-                                    old_power = old_state.get("power")
-                                    old_usage = old_state.get("power_usage")
-                                    changes = []
-                                    
-                                    if old_power != power_state:
-                                        changes.append(f"switch: {'On' if old_power else 'Off' if old_power is not None else 'Unknown'} → {'On' if power_state else 'Off'}")
-                                    if old_usage != power_usage:
-                                        changes.append(f"power: {old_usage if old_usage is not None else 0} → {power_usage}")
-                                    
-                                    if changes:
-                                        log_info(_LOGGER, device_type, "=> Plug %d %d state: {'switch': '%s', 'power': %s}, changes: %s, entity_key: %s [UPDATED]", 
-                                                   room_id, plug_num, "ON" if power_state else "OFF", power_usage, ", ".join(changes), device_key)
-                                    else:
-                                        log_debug(_LOGGER, device_type, "=> Plug %d %d state: {'switch': '%s', 'power': %s} [no change]", 
-                                                   room_id, plug_num, "ON" if power_state else "OFF", power_usage)
-                                    
-                                    # Check if new device
-                                    if device_key not in self._discovered_devices:
-                                        self._discovered_devices.add(device_key)
-                                        _LOGGER.info("=> NEW DEVICE discovered: %s", device_key)
-                                        
-                                        # Call discovery callbacks
-                                        for callback in self._device_discovery_callbacks:
-                                            try:
-                                                callback(device_type, f"{room_id}_{plug_num}")
-                                            except Exception as err:
-                                                _LOGGER.error("Error in discovery callback: %s", err)
-                                    
-                                    # Update state
-                                    old_full_state = self._device_states.get(device_key, {}).copy()
-                                    self._device_states[device_key] = individual_state
-                                    
-                                    # Call callback
-                                    if device_type in self._callbacks:
-                                        log_debug(_LOGGER, device_type, "=> Calling callback for %s with key=%s, state=%s", 
-                                                     device_type, f"{room_id}_{plug_num}", individual_state)
-                                        self._callbacks[device_type](device_type, f"{room_id}_{plug_num}", 
-                                                                   individual_state)
-                                        log_debug(_LOGGER, device_type, "=> Callback completed for %s", device_key)
-                    
-                    elif device_type == "thermostat":
-                        # Special thermostat packet format
-                        if len(packet) > 4:
-                            data_length = packet[4]
-                            log_info(_LOGGER, device_type, "=> Thermostat state: Num %d (device_num=0x%02X), Data length: %d bytes", int(device_num >> 4), device_num, data_length)
-                            
-                            # Log raw data for analysis
-                            if len(packet) > 5:
-                                _LOGGER.debug("=> Thermostat packet data: %s", 
-                                             ' '.join([f'{b:02X}' for b in packet[5:]]))
-                            
-                            # Different parsing based on packet format
-                            if data_length == 0x0D:  # Special format from log
-                                # Format: f7 36 1f 81 0d 00 00 0f 00 00 05 1e 05 1c 05 1b 05 1b 5f cc
-                                # bytes 5-9: header/status bytes
-                                # bytes 10-11: temp pair 1 (target, current)
-                                # bytes 12-13: temp pair 2
-                                # bytes 14-15: temp pair 3
-                                # bytes 16-17: temp pair 4
-                                _LOGGER.info("=> Special thermostat packet format detected")
-                                
-                                # Parse temperature pairs starting from byte 10
-                                temp_start = 10
-                                room_count = 0
-                                
-                                # Count valid temperature pairs
-                                for i in range(4):
-                                    idx = temp_start + i * 2
-                                    if idx + 1 < len(packet) and (packet[idx] > 0 or packet[idx + 1] > 0):
-                                        room_count += 1
-                                
-                                _LOGGER.info("=> Found %d thermostat(s) with temperature data", room_count)
-                                
-                                # Process each temperature pair
-                                for i in range(room_count):
-                                    idx = temp_start + i * 2
-                                    if idx + 1 < len(packet):
-                                        # Thermostat room number is just the index + 1 (1, 2, 3, 4)
-                                        thermostat_room = i + 1
-                                        device_key = f"{device_type}_{thermostat_room}"
-                                        # Swap target/current based on actual data pattern
-                                        target_temp = packet[idx]
-                                        current_temp = packet[idx + 1]
-                                        
-                                        # Detect if temperatures seem swapped (current > 50 is unlikely)
-                                        if current_temp > 50 and target_temp < 50:
-                                            target_temp, current_temp = current_temp, target_temp
-                                        
-                                        # Determine mode based on temperatures
-                                        # If target temp is 5 (min), assume it's off
-                                        mode = 0 if target_temp <= 5 else 1
-                                        
-                                        individual_state = {
-                                            "mode": mode,
-                                            "away": False,
-                                            "current_temperature": current_temp,
-                                            "target_temperature": target_temp
-                                        }
-                                        
-                                        # Check if state changed
-                                        old_state = self._device_states.get(device_key, {})
-                                        old_current = old_state.get("current_temperature")
-                                        old_target = old_state.get("target_temperature")
-                                        
-                                        if old_current != current_temp or old_target != target_temp:
-                                            log_info(_LOGGER, device_type, "=> Thermostat %d - Current: %d°C → %d°C, Target: %d°C → %d°C, entity_key: %s [UPDATED]",
-                                            thermostat_room, old_current if old_current is not None else 0, current_temp,
-                                            old_target if old_target is not None else 0, target_temp, device_key)
-                                        else:
-                                            log_debug(_LOGGER, device_type, "=> Thermostat %d - Current: %d°C, Target: %d°C [no change]",
-                                                       thermostat_room, current_temp, target_temp)
-                                        
-                                        # Device discovery and callback handling
-                                        if device_key not in self._discovered_devices:
-                                            self._discovered_devices.add(device_key)
-                                            _LOGGER.info("=> NEW DEVICE discovered: %s", device_key)
-                                            
-                                            for callback in self._device_discovery_callbacks:
-                                                try:
-                                                    callback(device_type, thermostat_room)
-                                                except Exception as err:
-                                                    _LOGGER.error("Error in discovery callback: %s", err)
-                                        
-                                        # Update state
-                                        old_full_state = self._device_states.get(device_key, {}).copy()
-                                        self._device_states[device_key] = individual_state
-                                        
-                                        if device_type in self._callbacks:
-                                            log_debug(_LOGGER, device_type, "=> Calling callback for %s with key=%s, state=%s", 
-                                                         device_type, thermostat_room, individual_state)
-                                            self._callbacks[device_type](device_type, thermostat_room, individual_state)
-                                            log_debug(_LOGGER, device_type, "=> Callback completed for %s", device_key)
-                                        
-                            else:
-                                # Standard thermostat packet format
-                                room_count = (data_length - 5) // 2 if data_length > 5 else 0
-                                _LOGGER.info("=> Standard format, calculated room count: %d", room_count)
-                                
-                                # Process each thermostat
-                                for thermo_idx in range(0, min(room_count, 15)):
-                                    thermostat_room = thermo_idx + 1  # Room number is just 1, 2, 3, 4, etc.
-                                    device_key = f"{device_type}_{thermostat_room}"
-                                    
-                                    # Check if we have enough data
-                                    if len(packet) < 8 + thermo_idx * 2 + 3:
-                                        _LOGGER.warning("Not enough data for thermostat room %d", thermostat_room)
-                                        continue
-                                    
-                                    # Extract state from standard format
-                                    mode_on = ((packet[6] & 0x1F) >> thermo_idx) & 1 if thermo_idx < 5 and len(packet) > 6 else False
-                                    away_on = ((packet[7] & 0x1F) >> thermo_idx) & 1 if thermo_idx < 5 and len(packet) > 7 else False
-                                    target_temp = packet[8 + thermo_idx * 2] if len(packet) > 8 + thermo_idx * 2 else 0
-                                    current_temp = packet[9 + thermo_idx * 2] if len(packet) > 9 + thermo_idx * 2 else 0
-                                    
-                                    individual_state = {
-                                        "mode": 1 if mode_on else 0,
-                                        "away": away_on,
-                                        "current_temperature": current_temp,
-                                        "target_temperature": target_temp
-                                    }
-                                    
-                                    # Check if state changed
-                                    old_state = self._device_states.get(device_key, {})
-                                    old_mode = old_state.get("mode")
-                                    old_current = old_state.get("current_temperature")
-                                    old_target = old_state.get("target_temperature")
-                                    
-                                    mode_value = 1 if mode_on else 0
-                                    if old_mode != mode_value or old_current != current_temp or old_target != target_temp:
-                                        log_info(_LOGGER, device_type, "=> Thermostat %d - Mode: %s → %s, Away: %s, Current: %d°C → %d°C, Target: %d°C → %d°C, entity_key: %s [UPDATED]",
-                                                   thermostat_room, "Heat" if old_mode == 1 else "Off" if old_mode == 0 else "UNKNOWN",
-                                                   "Heat" if mode_on else "Off", "On" if away_on else "Off",
-                                                   old_current if old_current is not None else 0, current_temp,
-                                                   old_target if old_target is not None else 0, target_temp, device_key)
-                                    else:
-                                        log_debug(_LOGGER, device_type, "=> Thermostat %d - Mode: %s, Away: %s, Current: %d°C, Target: %d°C [no change]",
-                                                   thermostat_room, "Heat" if mode_on else "Off", "On" if away_on else "Off",
-                                                   current_temp, target_temp)
-                                    
-                                    # Device discovery and callback handling
-                                    if device_key not in self._discovered_devices:
-                                        self._discovered_devices.add(device_key)
-                                        _LOGGER.info("=> NEW DEVICE discovered: %s", device_key)
-                                        
-                                        for callback in self._device_discovery_callbacks:
-                                            try:
-                                                callback(device_type, thermostat_room)
-                                            except Exception as err:
-                                                _LOGGER.error("Error in discovery callback: %s", err)
-                                    
-                                    # Update state
-                                    old_full_state = self._device_states.get(device_key, {}).copy()
-                                    self._device_states[device_key] = individual_state
-                                    
-                                    if device_type in self._callbacks:
-                                        log_debug(_LOGGER, device_type, "=> Calling callback for %s with key=%s, state=%s", 
-                                                     device_type, thermostat_room, individual_state)
-                                        self._callbacks[device_type](device_type, thermostat_room, individual_state)
-                                        log_debug(_LOGGER, device_type, "=> Callback completed for %s", device_key)
-                    
-                elif state_data:  # Other device types that return state_data
-                    # Other device types (fan, gas, energy, elevator, doorbell) - single devices
-                    device_key = device_type  # No device_num suffix for single devices
-                    # Check if state changed
-                    old_state = self._device_states.get(device_key, {})
-                    state_changed = False
-                    change_desc = []
-                        
-                    for k, v in state_data.items():
-                        if old_state.get(k) != v:
-                            state_changed = True
-                            change_desc.append(f"{k}: {old_state.get(k)} → {v}")
-                    
-                    if state_changed:
-                        log_info(_LOGGER, device_type, "=> %s state: %s, changes: %s, entity_key: %s [UPDATED]", 
-                                   device_type.capitalize(), state_data, ", ".join(change_desc), device_key)
-                    else:
-                        log_debug(_LOGGER, device_type, "=> %s state: %s [no change]", 
-                                   device_type.capitalize(), state_data)
-                    
-                    # Check if new device
-                    if device_key not in self._discovered_devices:
-                        self._discovered_devices.add(device_key)
-                        _LOGGER.info("=> NEW DEVICE discovered: %s", device_key)
-                        
-                        # Call discovery callbacks
-                        for callback in self._device_discovery_callbacks:
-                            try:
-                                callback(device_type, None)  # No device_id for single devices
-                            except Exception as err:
-                                _LOGGER.error("Error in discovery callback: %s", err)
-                    
-                    # Update state
-                    old_full_state = self._device_states.get(device_key, {}).copy()
-                    self._device_states[device_key] = state_data
-                    
-                    # Call callback
-                    if device_type in self._callbacks:
-                        log_debug(_LOGGER, device_type, "=> Calling callback for %s with key=None, state=%s", 
-                                     device_type, state_data)
-                        self._callbacks[device_type](device_type, None, state_data)
-                        log_debug(_LOGGER, device_type, "=> Callback completed for %s", device_key)
-                
-                return
-            else:
-                _LOGGER.debug("=> Device 0x%02X is state device but command 0x%02X != expected 0x%02X",
-                             device_id, command, expected_cmd)
-        
-        # Check for ACK packets
-        if device_id in ACK_HEADER:
-            device_type, expected_ack = ACK_HEADER[device_id]
-            if command == expected_ack:
-                log_debug(_LOGGER, device_type, "=> ACK packet for %s command", device_type)
-                return
-            else:
-                log_debug(_LOGGER, device_type, "=> Device 0x%02X in ACK_HEADER but command 0x%02X != expected 0x%02X",
-                             device_id, command, expected_ack)
-        
-        # Check for other known command patterns
-        # Device 0x39 with command patterns
-        if device_id == 0x39:
-            # Check for state pattern (command 0x1F, 0x2F, 0x3F, 0x4F, etc.)
-            if command in [0x1F, 0x2F, 0x3F, 0x4F, 0x5F, 0x6F, 0x7F]:
-                log_debug(_LOGGER, "plug", "=> Device 0x39 query packet, command=0x%02X", command)
-                return
-            elif command == 0x01:
-                log_debug(_LOGGER, "plug", "=> Device 0x39 control response packet: device_num=0x%02X", device_num)
-                return
-        
-        # Device 0x36 (thermostat) with command 0x01
-        if device_id == 0x36 and command == 0x01:
-            log_debug(_LOGGER, "thermostat", "=> Thermostat control response packet: device_num=0x%02X", device_num)
-            return
-        
-        # Device 0x32 (fan) with command 0x01
-        if device_id == 0x32 and command == 0x01:
-            log_debug(_LOGGER, "fan", "=> Fan control response packet: device_num=0x%02X", device_num)
-            return
-        
-        # Device 0x0E (light) with command 0x01
-        if device_id == 0x0E and command == 0x01:
-            log_debug(_LOGGER, "light", "=> Light control response packet: device_num=0x%02X", device_num)
-            return
-        
-        # Device 0x60 (unknown) with command 0x01
-        if device_id == 0x60 and command == 0x01:
-            log_info(_LOGGER, "unknown", "=> Unknown device 0x60 control packet: device_num=0x%02X", device_num)
-            return
-        
-        # Create signature from first 4 bytes (8 hex characters)
-        signature = packet[:4].hex()
-        
-        # Check if value has changed
-        if signature in self._previous_mqtt_values and self._previous_mqtt_values[signature] == packet:
-            # Packet hasn't changed, skip logging and processing
-            return
-        
-        # Update previous value
-        if signature in self._previous_mqtt_values:
-            log_info(_LOGGER, "unknown", "Updated signature %s: %s", signature, ' '.join([f"{b:02x}" for b in packet[4:]]))
-        else:
-            log_info(_LOGGER, "unknown", "Created signature %s: %s", signature, ' '.join([f"{b:02x}" for b in packet[4:]]))
-        
-        self._previous_mqtt_values[signature] = packet
-        
-        # Check if this is a known device but non-state command
-        known_device_type = None
-        for device_type, device_config in RS485_DEVICE.items():
-            if "state" in device_config and device_config["state"]["id"] == device_id:
-                known_device_type = device_type
-                break
-        
+        # Step 2: Process based on device type
         if known_device_type:
-            # Known device, non-state command - create Cmd sensor
-            self._handle_device_cmd_packet(known_device_type, packet)
+            # Known device - check if it's a state packet
+            if device_id in STATE_HEADER and command == STATE_HEADER[device_id][1]:
+                # This is a state packet - process normally
+                self._process_state_packet(known_device_type, packet)
+            else:
+                # This is a non-state packet for known device - create Cmd sensor
+                log_info(_LOGGER, device_type, "=> Non-state packet for known device %s, creating Cmd sensor", known_device_type)
+                self._handle_device_cmd_packet(known_device_type, packet)
         else:
-            # Unknown packet - handle it
-            log_info(_LOGGER, "unknown", "Unknown packet: %s | Device: 0x%02X | Num: 0x%02X (dec: %d) | Cmd: 0x%02X | State headers: %s | ACK headers: %s",
-                           packet.hex(), device_id, device_num, device_num, command,
-                           ','.join([f"0x{k:02X}" for k in STATE_HEADER.keys()]),
-                           ','.join([f"0x{k:02X}" for k in ACK_HEADER.keys()]))
-            
-            # Handle unknown devices
+            # Unknown device - create Unknown sensor
+            log_info(_LOGGER, "unknown", "=> Unknown device packet: 0x%02X, creating Unknown sensor", device_id)
             self._handle_unknown_device(packet)
+    
+    def _process_state_packet(self, device_type: str, packet: bytes):
+        """Process state packet for known device."""
+        device_id = packet[1]
+        device_num = packet[2]
+        command = packet[3]
+        
+        # Parse state data based on device type
+        state_data = self._parse_state(device_type, packet)
+        
+        # For light, plug, thermostat - they are handled inline below
+        if device_type in ["light", "plug", "thermostat"]:
+            # Device identification based on type
+            if device_type == "light":
+                # Extract room number from lower 4 bits
+                room_id = int(device_num & 0x0F)
+                
+                if len(packet) > 4:
+                    # Light count is 5th byte minus 1
+                    light_count = packet[4] - 1
+                    log_info(_LOGGER, device_type, "=> Light state: Room %d (device_num=0x%02X), Light count: %d", room_id, device_num, light_count)
+                    
+                    # Process each light in the room
+                    for light_num in range(1, min(light_count + 1, 4)):  # Max 3 lights
+                        # Light states start from 7th byte (index 6)
+                        if len(packet) > 6 + light_num - 1:
+                            device_key = f"{device_type}_{room_id}_{light_num}"
+                            light_state = (packet[6 + light_num - 1] & 1) == 1
+                            
+                            individual_state = {"power": light_state}
+                            
+                            # Check if state changed
+                            old_state_dict = self._device_states.get(device_key, {})
+                            old_power = old_state_dict.get("power")
+                            changes = []
+                            
+                            if old_power != light_state:
+                                changes.append(f"switch: {'On' if old_power else 'Off' if old_power is not None else 'Unknown'} → {'On' if light_state else 'Off'}")
+                            
+                            if changes:
+                                log_info(_LOGGER, device_type, "=> Light %d %d state: {'switch': '%s'}, changes: %s, entity_key: %s [UPDATED]", 
+                                           room_id, light_num, "ON" if light_state else "OFF", ", ".join(changes), device_key)
+                            else:
+                                log_debug(_LOGGER, device_type, "=> Light %d %d state: {'switch': '%s'} [no change]", 
+                                           room_id, light_num, "ON" if light_state else "OFF")
+                            
+                            # Check if new device
+                            if device_key not in self._discovered_devices:
+                                self._discovered_devices.add(device_key)
+                                _LOGGER.info("=> NEW DEVICE discovered: %s", device_key)
+                                
+                                # Call discovery callbacks
+                                for callback in self._device_discovery_callbacks:
+                                    try:
+                                        callback(device_type, f"{room_id}_{light_num}")
+                                    except Exception as err:
+                                        _LOGGER.error("Error in discovery callback: %s", err)
+                            
+                            # Update state
+                            old_full_state = self._device_states.get(device_key, {}).copy()
+                            self._device_states[device_key] = individual_state
+                            
+                            # Call callback
+                            if device_type in self._callbacks:
+                                log_debug(_LOGGER, device_type, "=> Calling callback for %s with key=%s, state=%s", 
+                                             device_type, f"{room_id}_{light_num}", individual_state)
+                                self._callbacks[device_type](device_type, f"{room_id}_{light_num}", 
+                                                           individual_state)
+                                log_debug(_LOGGER, device_type, "=> Callback completed for %s", device_key)
+            
+            elif device_type == "plug":
+                # Extract room number from upper 4 bits
+                room_id = int(device_num >> 4)
+                
+                if len(packet) > 5:
+                    data_length = packet[4]
+                    # Plug count is data length divided by 3
+                    plug_count = int(data_length / 3)
+                    log_info(_LOGGER, device_type, "=> Plug state: Room %d (device_num=0x%02X), Data length: %d bytes, Plug count: %d", room_id, device_num, data_length, plug_count)
+                    
+                    # Process each plug
+                    for plug_num in range(1, min(plug_count + 1, 3)):  # Max 2 plugs
+                        # Calculate index for this plug's data
+                        base_idx = plug_num * 3 + 3  # Start from index for each plug
+                        if len(packet) > base_idx + 2:
+                            device_key = f"{device_type}_{room_id}_{plug_num}"
+                            
+                            # Parse plug data
+                            # Power state is bit 4 of the first byte
+                            power_state = (packet[base_idx] & 0x10) != 0
+                            
+                            # Power usage calculation
+                            power_high = format((packet[base_idx] & 0x0F) | (packet[base_idx + 1] << 4) | (packet[base_idx + 2] >> 4), 'x')
+                            power_decimal = format(packet[base_idx + 2] & 0x0F, 'x')
+                            power_usage_str = f"{power_high}.{power_decimal}"
+                            
+                            # Convert to float
+                            try:
+                                power_usage = float(power_usage_str)
+                            except:
+                                power_usage = 0.0
+                            
+                            individual_state = {
+                                "power": power_state,
+                                "power_usage": power_usage
+                            }
+                            
+                            # Check if state changed
+                            old_state = self._device_states.get(device_key, {})
+                            old_power = old_state.get("power")
+                            old_usage = old_state.get("power_usage")
+                            changes = []
+                            
+                            if old_power != power_state:
+                                changes.append(f"switch: {'On' if old_power else 'Off' if old_power is not None else 'Unknown'} → {'On' if power_state else 'Off'}")
+                            if old_usage != power_usage:
+                                changes.append(f"power: {old_usage if old_usage is not None else 0} → {power_usage}")
+                            
+                            if changes:
+                                log_info(_LOGGER, device_type, "=> Plug %d %d state: {'switch': '%s', 'power': %s}, changes: %s, entity_key: %s [UPDATED]", 
+                                           room_id, plug_num, "ON" if power_state else "OFF", power_usage, ", ".join(changes), device_key)
+                            else:
+                                log_debug(_LOGGER, device_type, "=> Plug %d %d state: {'switch': '%s', 'power': %s} [no change]", 
+                                           room_id, plug_num, "ON" if power_state else "OFF", power_usage)
+                            
+                            # Check if new device
+                            if device_key not in self._discovered_devices:
+                                self._discovered_devices.add(device_key)
+                                _LOGGER.info("=> NEW DEVICE discovered: %s", device_key)
+                                
+                                # Call discovery callbacks
+                                for callback in self._device_discovery_callbacks:
+                                    try:
+                                        callback(device_type, f"{room_id}_{plug_num}")
+                                    except Exception as err:
+                                        _LOGGER.error("Error in discovery callback: %s", err)
+                            
+                            # Update state
+                            old_full_state = self._device_states.get(device_key, {}).copy()
+                            self._device_states[device_key] = individual_state
+                            
+                            # Call callback
+                            if device_type in self._callbacks:
+                                log_debug(_LOGGER, device_type, "=> Calling callback for %s with key=%s, state=%s", 
+                                             device_type, f"{room_id}_{plug_num}", individual_state)
+                                self._callbacks[device_type](device_type, f"{room_id}_{plug_num}", 
+                                                           individual_state)
+                                log_debug(_LOGGER, device_type, "=> Callback completed for %s", device_key)
+            
+            elif device_type == "thermostat":
+                # Special thermostat packet format
+                if len(packet) > 4:
+                    data_length = packet[4]
+                    log_info(_LOGGER, device_type, "=> Thermostat state: Num %d (device_num=0x%02X), Data length: %d bytes", int(device_num >> 4), device_num, data_length)
+                    
+                    # Log raw data for analysis
+                    if len(packet) > 5:
+                        _LOGGER.debug("=> Thermostat packet data: %s", 
+                                     ' '.join([f'{b:02X}' for b in packet[5:]]))
+                    
+                    # Different parsing based on packet format
+                    if data_length == 0x0D:  # Special format from log
+                        # Format: f7 36 1f 81 0d 00 00 0f 00 00 05 1e 05 1c 05 1b 05 1b 5f cc
+                        # bytes 5-9: header/status bytes
+                        # bytes 10-11: temp pair 1 (target, current)
+                        # bytes 12-13: temp pair 2
+                        # bytes 14-15: temp pair 3
+                        # bytes 16-17: temp pair 4
+                        _LOGGER.info("=> Special thermostat packet format detected")
+                        
+                        # Parse temperature pairs starting from byte 10
+                        temp_start = 10
+                        room_count = 0
+                        
+                        # Count valid temperature pairs
+                        for i in range(4):
+                            idx = temp_start + i * 2
+                            if idx + 1 < len(packet) and (packet[idx] > 0 or packet[idx + 1] > 0):
+                                room_count += 1
+                        
+                        _LOGGER.info("=> Found %d thermostat(s) with temperature data", room_count)
+                        
+                        # Process each temperature pair
+                        for i in range(room_count):
+                            idx = temp_start + i * 2
+                            if idx + 1 < len(packet):
+                                # Thermostat room number is just the index + 1 (1, 2, 3, 4)
+                                thermostat_room = i + 1
+                                device_key = f"{device_type}_{thermostat_room}"
+                                # Swap target/current based on actual data pattern
+                                target_temp = packet[idx]
+                                current_temp = packet[idx + 1]
+                                
+                                # Detect if temperatures seem swapped (current > 50 is unlikely)
+                                if current_temp > 50 and target_temp < 50:
+                                    target_temp, current_temp = current_temp, target_temp
+                                
+                                # Determine mode based on temperatures
+                                # If target temp is 5 (min), assume it's off
+                                mode = 0 if target_temp <= 5 else 1
+                                
+                                individual_state = {
+                                    "mode": mode,
+                                    "away": False,
+                                    "current_temperature": current_temp,
+                                    "target_temperature": target_temp
+                                }
+                                
+                                # Check if state changed
+                                old_state = self._device_states.get(device_key, {})
+                                old_current = old_state.get("current_temperature")
+                                old_target = old_state.get("target_temperature")
+                                
+                                if old_current != current_temp or old_target != target_temp:
+                                    log_info(_LOGGER, device_type, "=> Thermostat %d - Current: %d°C → %d°C, Target: %d°C → %d°C, entity_key: %s [UPDATED]",
+                                    thermostat_room, old_current if old_current is not None else 0, current_temp,
+                                    old_target if old_target is not None else 0, target_temp, device_key)
+                                else:
+                                    log_debug(_LOGGER, device_type, "=> Thermostat %d - Current: %d°C, Target: %d°C [no change]",
+                                               thermostat_room, current_temp, target_temp)
+                                
+                                # Device discovery and callback handling
+                                if device_key not in self._discovered_devices:
+                                    self._discovered_devices.add(device_key)
+                                    _LOGGER.info("=> NEW DEVICE discovered: %s", device_key)
+                                    
+                                    for callback in self._device_discovery_callbacks:
+                                        try:
+                                            callback(device_type, thermostat_room)
+                                        except Exception as err:
+                                            _LOGGER.error("Error in discovery callback: %s", err)
+                                
+                                # Update state
+                                old_full_state = self._device_states.get(device_key, {}).copy()
+                                self._device_states[device_key] = individual_state
+                                
+                                if device_type in self._callbacks:
+                                    log_debug(_LOGGER, device_type, "=> Calling callback for %s with key=%s, state=%s", 
+                                                 device_type, thermostat_room, individual_state)
+                                    self._callbacks[device_type](device_type, thermostat_room, individual_state)
+                                    log_debug(_LOGGER, device_type, "=> Callback completed for %s", device_key)
+                                    
+                    else:
+                        # Standard thermostat packet format
+                        room_count = (data_length - 5) // 2 if data_length > 5 else 0
+                        _LOGGER.info("=> Standard format, calculated room count: %d", room_count)
+                        
+                        # Process each thermostat
+                        for thermo_idx in range(0, min(room_count, 15)):
+                            thermostat_room = thermo_idx + 1  # Room number is just 1, 2, 3, 4, etc.
+                            device_key = f"{device_type}_{thermostat_room}"
+                            
+                            # Check if we have enough data
+                            if len(packet) < 8 + thermo_idx * 2 + 3:
+                                _LOGGER.warning("Not enough data for thermostat room %d", thermostat_room)
+                                continue
+                            
+                            # Extract state from standard format
+                            mode_on = ((packet[6] & 0x1F) >> thermo_idx) & 1 if thermo_idx < 5 and len(packet) > 6 else False
+                            away_on = ((packet[7] & 0x1F) >> thermo_idx) & 1 if thermo_idx < 5 and len(packet) > 7 else False
+                            target_temp = packet[8 + thermo_idx * 2] if len(packet) > 8 + thermo_idx * 2 else 0
+                            current_temp = packet[9 + thermo_idx * 2] if len(packet) > 9 + thermo_idx * 2 else 0
+                            
+                            individual_state = {
+                                "mode": 1 if mode_on else 0,
+                                "away": away_on,
+                                "current_temperature": current_temp,
+                                "target_temperature": target_temp
+                            }
+                            
+                            # Check if state changed
+                            old_state = self._device_states.get(device_key, {})
+                            old_mode = old_state.get("mode")
+                            old_current = old_state.get("current_temperature")
+                            old_target = old_state.get("target_temperature")
+                            
+                            mode_value = 1 if mode_on else 0
+                            if old_mode != mode_value or old_current != current_temp or old_target != target_temp:
+                                log_info(_LOGGER, device_type, "=> Thermostat %d - Mode: %s → %s, Away: %s, Current: %d°C → %d°C, Target: %d°C → %d°C, entity_key: %s [UPDATED]",
+                                           thermostat_room, "Heat" if old_mode == 1 else "Off" if old_mode == 0 else "UNKNOWN",
+                                           "Heat" if mode_on else "Off", "On" if away_on else "Off",
+                                           old_current if old_current is not None else 0, current_temp,
+                                           old_target if old_target is not None else 0, target_temp, device_key)
+                            else:
+                                log_debug(_LOGGER, device_type, "=> Thermostat %d - Mode: %s, Away: %s, Current: %d°C, Target: %d°C [no change]",
+                                           thermostat_room, "Heat" if mode_on else "Off", "On" if away_on else "Off",
+                                           current_temp, target_temp)
+                            
+                            # Device discovery and callback handling
+                            if device_key not in self._discovered_devices:
+                                self._discovered_devices.add(device_key)
+                                _LOGGER.info("=> NEW DEVICE discovered: %s", device_key)
+                                
+                                for callback in self._device_discovery_callbacks:
+                                    try:
+                                        callback(device_type, thermostat_room)
+                                    except Exception as err:
+                                        _LOGGER.error("Error in discovery callback: %s", err)
+                            
+                            # Update state
+                            old_full_state = self._device_states.get(device_key, {}).copy()
+                            self._device_states[device_key] = individual_state
+                            
+                            if device_type in self._callbacks:
+                                log_debug(_LOGGER, device_type, "=> Calling callback for %s with key=%s, state=%s", 
+                                             device_type, thermostat_room, individual_state)
+                                self._callbacks[device_type](device_type, thermostat_room, individual_state)
+                                log_debug(_LOGGER, device_type, "=> Callback completed for %s", device_key)
+        
+        elif state_data:  # Other device types that return state_data
+            # Other device types (fan, gas, energy, elevator, doorbell) - single devices
+            device_key = device_type  # No device_num suffix for single devices
+            # Check if state changed
+            old_state = self._device_states.get(device_key, {})
+            state_changed = False
+            change_desc = []
+                
+            for k, v in state_data.items():
+                if old_state.get(k) != v:
+                    state_changed = True
+                    change_desc.append(f"{k}: {old_state.get(k)} → {v}")
+            
+            if state_changed:
+                log_info(_LOGGER, device_type, "=> %s state: %s, changes: %s, entity_key: %s [UPDATED]", 
+                           device_type.capitalize(), state_data, ", ".join(change_desc), device_key)
+            else:
+                log_debug(_LOGGER, device_type, "=> %s state: %s [no change]", 
+                           device_type.capitalize(), state_data)
+            
+            # Check if new device
+            if device_key not in self._discovered_devices:
+                self._discovered_devices.add(device_key)
+                _LOGGER.info("=> NEW DEVICE discovered: %s", device_key)
+                
+                # Call discovery callbacks
+                for callback in self._device_discovery_callbacks:
+                    try:
+                        callback(device_type, None)  # No device_id for single devices
+                    except Exception as err:
+                        _LOGGER.error("Error in discovery callback: %s", err)
+            
+            # Update state
+            old_full_state = self._device_states.get(device_key, {}).copy()
+            self._device_states[device_key] = state_data
+            
+            # Call callback
+            if device_type in self._callbacks:
+                log_debug(_LOGGER, device_type, "=> Calling callback for %s with key=None, state=%s", 
+                             device_type, state_data)
+                self._callbacks[device_type](device_type, None, state_data)
+                log_debug(_LOGGER, device_type, "=> Callback completed for %s", device_key)
     
     def _handle_device_cmd_packet(self, device_type: str, packet: bytes):
         """Handle non-state command packets for known devices."""
