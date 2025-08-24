@@ -512,17 +512,23 @@ class EzvilleCmdSensor(CoordinatorEntity, SensorEntity):
         # Device info - group with base device type
         from .device import EzvilleWallpadDevice
         base_device = EzvilleWallpadDevice(coordinator, device_key, self._attr_unique_id, self._attr_name)
-        # Override device name to group with base device
+        # Override device info to group with base device
         if base_device_type:
-            device_info = dict(base_device.device_info)
             # Parse device key to get room info for grouping
             parts = device_key.split("_")
             if base_device_type in ["light", "plug", "thermostat"] and len(parts) >= 2:
                 room_id = parts[1]
-                device_info["name"] = f"{base_device_type.title()} Room {room_id}"
+                # Create proper device key for grouping
+                group_device_key = f"{base_device_type}_{room_id}"
+                if base_device_type == "thermostat":
+                    group_device_key = "thermostat"  # All thermostats group together
             else:
-                device_info["name"] = base_device_type.title()
-            self._attr_device_info = device_info
+                # Single devices
+                group_device_key = base_device_type
+            
+            # Get device info from the base device group
+            base_device_for_group = EzvilleWallpadDevice(coordinator, group_device_key, "", "")
+            self._attr_device_info = base_device_for_group.device_info
         else:
             self._attr_device_info = base_device.device_info
         

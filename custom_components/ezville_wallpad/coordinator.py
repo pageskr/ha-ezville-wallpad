@@ -273,6 +273,19 @@ class EzvilleWallpadCoordinator(DataUpdateCoordinator):
         # Always log unknown device discovery
         if device_type == "unknown":
             _LOGGER.info("Unknown device discovery triggered: device_type=%s, device_id=%s", device_type, device_id)
+            
+            # Create Unknown parent device if not exists
+            unknown_parent_key = "unknown"
+            if unknown_parent_key not in self.devices:
+                _LOGGER.info("Creating Unknown parent device")
+                self.devices[unknown_parent_key] = {
+                    "device_type": "unknown",
+                    "device_id": "system",
+                    "name": "Unknown",
+                    "state": {}
+                }
+                # Check if platform needs to be loaded
+                self._check_and_load_platform("unknown")
         
         # Unknown devices should always be processed
         if device_type != "unknown" and device_type not in self.capabilities:
@@ -478,6 +491,19 @@ class EzvilleWallpadCoordinator(DataUpdateCoordinator):
         if device_type == "unknown":
             _LOGGER.info("==> Unknown device callback: device_type=%s, device_id=%s, state=%s",
                          device_type, device_id, state)
+            
+            # Create Unknown parent device if not exists
+            unknown_parent_key = "unknown"
+            if unknown_parent_key not in self.devices:
+                _LOGGER.info("Creating Unknown parent device in callback")
+                self.devices[unknown_parent_key] = {
+                    "device_type": "unknown",
+                    "device_id": "system",
+                    "name": "Unknown",
+                    "state": {}
+                }
+                # Check if platform needs to be loaded
+                self._check_and_load_platform("unknown")
         
         # Check if this is a CMD sensor
         if "_cmd" in device_type:

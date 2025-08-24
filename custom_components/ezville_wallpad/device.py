@@ -32,31 +32,11 @@ class EzvilleWallpadDevice(CoordinatorEntity):
     @property
     def device_info(self) -> DeviceInfo:
         """Return device information."""
+        device_type = self._device_key.split("_")[0]
         parts = self._device_key.split("_")
-        device_type = parts[0]
-        
-        # Check if this is a CMD sensor
-        is_cmd_sensor = "cmd" in parts
         
         # 기기별 이름 생성 및 식별자 로직
-        if is_cmd_sensor:
-            # CMD sensor - group with base device
-            # Format: light_1_2_cmd_41 -> group with light_1
-            # Format: doorbell_cmd_41 -> group with doorbell
-            if device_type in ["light", "plug"]:
-                room_id = parts[1] if len(parts) > 1 else "1"
-                device_name = f"{device_type.title()} {room_id}"
-                device_identifier = f"{device_type}_{room_id}"
-            elif device_type == "thermostat":
-                room_id = parts[1] if len(parts) > 1 else "1"
-                # All thermostats grouped together
-                device_name = "Thermostat"
-                device_identifier = "thermostat"
-            else:
-                # Single devices (fan, gas, energy, elevator, doorbell)
-                device_name = self._get_device_display_name(device_type)
-                device_identifier = device_type
-        elif device_type == "light":
+        if device_type == "light":
             # light_1_2 -> Light 1 기기로 그룹핑
             room_id = parts[1] if len(parts) > 1 else "1"
             device_name = f"Light {room_id}"
@@ -138,13 +118,7 @@ class EzvilleWallpadDevice(CoordinatorEntity):
     def icon(self) -> str:
         """Return the icon for the entity."""
         # Use LG air conditioner icon or generic LG icon
-        parts = self._device_key.split("_")
-        device_type = parts[0]
-        
-        # Check if this is a CMD sensor
-        if "cmd" in parts:
-            return "mdi:console-network"
-        
+        device_type = self._device_key.split("_")[0]
         icons = {
             "light": "mdi:lightbulb",
             "plug": "mdi:power-socket-de", 
