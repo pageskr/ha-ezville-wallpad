@@ -42,7 +42,7 @@ async def async_setup_entry(
         _LOGGER.debug("async_add_sensors called for device_key=%s, device_type=%s", device_key, device_type)
         
         # Add plug power sensor
-        if device_type == "plug" and f"{device_key}_power" not in added_devices:
+        if device_type == "plug" and not device_info.get("is_cmd_sensor", False) and f"{device_key}_power" not in added_devices:
             added_devices.add(f"{device_key}_power")
             entities.append(EzvillePowerSensor(coordinator, device_key, device_info))
             _LOGGER.info("Added power sensor for %s", device_key)

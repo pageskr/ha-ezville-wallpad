@@ -504,6 +504,14 @@ class EzvilleWallpadCoordinator(DataUpdateCoordinator):
                 }
                 # Check if platform needs to be loaded
                 self._check_and_load_platform("unknown")
+                
+                # Trigger update for parent device creation
+                if threading.current_thread() is threading.main_thread():
+                    self.async_set_updated_data(self.devices)
+                else:
+                    self.hass.loop.call_soon_threadsafe(
+                        lambda: self.async_set_updated_data(self.devices)
+                    )
         
         # Check if this is a CMD sensor
         if "_cmd" in device_type:
@@ -555,18 +563,25 @@ class EzvilleWallpadCoordinator(DataUpdateCoordinator):
                         )
                     )
             else:
-                # Update existing device
-                self.devices[device_key]["state"] = state
-                if should_log:
-                    log_debug(_LOGGER, base_device_type, "Updated CMD sensor state: %s", device_key)
+                # Update existing device - check if state changed
+                old_state = self.devices[device_key].get("state", {})
+                # Compare only the data field for CMD sensors
+                if old_state.get("data") != state.get("data"):
+                    self.devices[device_key]["state"] = state
+                    if should_log:
+                        log_debug(_LOGGER, base_device_type, "Updated CMD sensor state: %s", device_key)
+                    
+                    # Trigger coordinator update only if state changed
+                    if threading.current_thread() is threading.main_thread():
+                        self.async_set_updated_data(self.devices)
+                    else:
+                        self.hass.loop.call_soon_threadsafe(
+                            lambda: self.async_set_updated_data(self.devices)
+                        )
+                else:
+                    if should_log:
+                        log_debug(_LOGGER, base_device_type, "CMD sensor state unchanged: %s", device_key)
             
-            # Trigger coordinator update
-            if threading.current_thread() is threading.main_thread():
-                self.async_set_updated_data(self.devices)
-            else:
-                self.hass.loop.call_soon_threadsafe(
-                    lambda: self.async_set_updated_data(self.devices)
-                )
             return
         
         # Get logging enabled device types from options
