@@ -895,6 +895,11 @@ class EzvilleRS485Client:
         device_num = packet[2]
         command = packet[3]
         
+        # Skip 0x01 command (state request packet)
+        if command == 0x01:
+            log_debug(_LOGGER, device_type, "=> Skipping state request packet (0x01) for %s", device_type)
+            return
+        
         # Create sensor name based on device type
         if device_type in ["light", "plug"]:
             # Extract room number
@@ -1003,20 +1008,26 @@ class EzvilleRS485Client:
                 except Exception as err:
                     log_error(_LOGGER, "unknown", "Error in discovery callback: %s", err)
         
-        # Update state
-        old_full_state = self._device_states.get(device_key, {}).copy()
-        self._device_states[device_key] = state
+        # Check if state has changed
+        old_state = self._device_states.get(device_key, {})
+        state_changed = old_state.get("data") != state.get("data")
         
-        # Call callback if registered with signature as device_id
-        if "unknown" in self._callbacks:
-            log_info(_LOGGER, "unknown", "=> Calling callback for unknown with key=%s, state=%s", 
-                         signature, state)
-            self._callbacks["unknown"](device_type, signature, state)
-            log_info(_LOGGER, "unknown", "=> Callback completed for %s", device_key)
+        if state_changed:
+            # Update state
+            self._device_states[device_key] = state
+            
+            # Call callback if registered with signature as device_id
+            if "unknown" in self._callbacks:
+                log_info(_LOGGER, "unknown", "=> Calling callback for unknown with key=%s, state=%s", 
+                             signature, state)
+                self._callbacks["unknown"](device_type, signature, state)
+                log_info(_LOGGER, "unknown", "=> Callback completed for %s", device_key)
+            else:
+                log_error(_LOGGER, "unknown", "=> No callback registered for unknown devices!")
+            
+            log_info(_LOGGER, "unknown", "=> Unknown device %s updated with state: %s", device_key, state)
         else:
-            log_error(_LOGGER, "unknown", "=> No callback registered for unknown devices!")
-        
-        log_info(_LOGGER, "unknown", "=> Unknown device %s updated with state: %s", device_key, state)
+            log_debug(_LOGGER, "unknown", "=> Unknown device %s state unchanged, skipping update", device_key)
 
     def _parse_state(self, device_type: str, packet: bytes) -> Optional[Dict[str, Any]]:
         """Parse state packet based on device type."""

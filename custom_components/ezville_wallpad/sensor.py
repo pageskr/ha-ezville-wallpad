@@ -71,11 +71,6 @@ async def async_setup_entry(
         
         # Add unknown device sensor
         if device_type == "unknown":
-            # Skip parent device
-            if device_info.get("device_id") == "parent":
-                _LOGGER.debug("Skipping Unknown parent device")
-                return
-            
             if f"{device_key}_state" not in added_devices:
                 added_devices.add(f"{device_key}_state")
                 entities.append(EzvilleUnknownSensor(coordinator, device_key, device_info))
@@ -178,7 +173,7 @@ class EzvillePowerSensor(CoordinatorEntity, SensorEntity):
 
     def _handle_coordinator_update(self) -> None:
         """Handle updated data from the coordinator."""
-        # Update last detected time
+        # Update last detected time only when state changes
         import time
         self._last_detected = time.time()
         
@@ -186,7 +181,8 @@ class EzvillePowerSensor(CoordinatorEntity, SensorEntity):
         if hasattr(self, 'hass') and self.hass:
             self.hass.loop.call_soon_threadsafe(self.async_write_ha_state)
         else:
-            _LOGGER.debug("===> Cannot update state for %s - hass not available", self._attr_name)
+            base_device_type = self._device_info.get("device_type", "")
+            log_debug(_LOGGER, base_device_type, "===> Cannot update state for %s - hass not available", self._attr_name)
 
     async def async_added_to_hass(self) -> None:
         """When entity is added to hass."""
@@ -621,7 +617,7 @@ class EzvilleUnknownSensor(CoordinatorEntity, SensorEntity):
         # Entity attributes
         self._attr_unique_id = f"{DOMAIN}_{device_key}_state"
         # Create entity name with signature (8 hex chars)
-        if device_id and device_id != "parent":
+        if device_id:
             # device_id is the signature (8 hex chars)
             self._attr_name = f"Unknown {device_id}"
         else:

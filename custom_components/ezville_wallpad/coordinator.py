@@ -270,23 +270,6 @@ class EzvilleWallpadCoordinator(DataUpdateCoordinator):
 
     def _on_device_discovered(self, device_type: str, device_id: Any):
         """Handle new device discovery."""
-        # Always log unknown device discovery
-        if device_type == "unknown":
-            _LOGGER.info("Unknown device discovery triggered: device_type=%s, device_id=%s", device_type, device_id)
-            
-            # Create Unknown parent device if not exists
-            unknown_parent_key = "unknown"
-            if unknown_parent_key not in self.devices:
-                _LOGGER.info("Creating Unknown parent device")
-                self.devices[unknown_parent_key] = {
-                    "device_type": "unknown",
-                    "device_id": "parent",
-                    "name": "Unknown",
-                    "state": {}
-                }
-                # Check if platform needs to be loaded
-                self._check_and_load_platform("unknown")
-        
         # Unknown devices should always be processed
         if device_type != "unknown" and device_type not in self.capabilities:
             _LOGGER.debug("Ignoring discovered device %s_%s (not in capabilities)", 
@@ -491,27 +474,6 @@ class EzvilleWallpadCoordinator(DataUpdateCoordinator):
         if device_type == "unknown":
             _LOGGER.info("==> Unknown device callback: device_type=%s, device_id=%s, state=%s",
                          device_type, device_id, state)
-            
-            # Create Unknown parent device if not exists
-            unknown_parent_key = "unknown"
-            if unknown_parent_key not in self.devices:
-                _LOGGER.info("Creating Unknown parent device in callback")
-                self.devices[unknown_parent_key] = {
-                    "device_type": "unknown",
-                    "device_id": "parent",
-                    "name": "Unknown",
-                    "state": {}
-                }
-                # Check if platform needs to be loaded
-                self._check_and_load_platform("unknown")
-                
-                # Trigger update for parent device creation
-                if threading.current_thread() is threading.main_thread():
-                    self.async_set_updated_data(self.devices)
-                else:
-                    self.hass.loop.call_soon_threadsafe(
-                        lambda: self.async_set_updated_data(self.devices)
-                    )
         
         # Check if this is a CMD sensor
         if "_cmd" in device_type:
@@ -529,6 +491,16 @@ class EzvilleWallpadCoordinator(DataUpdateCoordinator):
             
             # Create device entry for CMD sensor - use base device type for grouping
             if device_key not in self.devices:
+                # Extract command from device_key
+                parts = device_key.split("_")
+                if len(parts) > 0:
+                    cmd_part = parts[-1]
+                    # Check if it's 0x01 (in lowercase)
+                    if cmd_part == "01":
+                        if should_log:
+                            log_debug(_LOGGER, base_device_type, "Skipping CMD sensor creation for state request (0x01)")
+                        return
+                
                 # Get the base device key for grouping
                 parts = device_key.split("_")
                 if base_device_type in ["light", "plug"]:
@@ -617,7 +589,11 @@ class EzvilleWallpadCoordinator(DataUpdateCoordinator):
         if not is_new_device:
             # Compare old and new state
             old_state = self.devices[device_key].get("state", {})
-            state_changed = old_state != state
+            # For unknown devices, compare only data field
+            if device_type == "unknown":
+                state_changed = old_state.get("data") != state.get("data")
+            else:
+                state_changed = old_state != state
             
             if not state_changed:
                 # No change, skip update
