@@ -71,6 +71,11 @@ async def async_setup_entry(
         
         # Add unknown device sensor
         if device_type == "unknown":
+            # Skip parent device
+            if device_info.get("device_id") == "parent":
+                _LOGGER.debug("Skipping Unknown parent device")
+                return
+            
             if f"{device_key}_state" not in added_devices:
                 added_devices.add(f"{device_key}_state")
                 entities.append(EzvilleUnknownSensor(coordinator, device_key, device_info))
@@ -550,15 +555,11 @@ class EzvilleCmdSensor(CoordinatorEntity, SensorEntity):
         device = self.coordinator.devices.get(self._device_key, {})
         state = device.get("state", {})
         
-        import time
         from datetime import datetime
-        
-        # Update last detected time
-        self._last_detected = time.time()
         
         attributes = {
             "device_id": state.get("device_id", "Unknown"),
-            "device_num": state.get("device_num", 0),
+            "device_num": state.get("device_num", "0x00"),
             "command": state.get("command", "Unknown"),
             "raw_data": state.get("raw_data", "No data"),
             "packet_length": state.get("packet_length", 0),
@@ -658,7 +659,7 @@ class EzvilleUnknownSensor(CoordinatorEntity, SensorEntity):
         
         attributes = {
             "device_id": state.get("device_id", "Unknown"),
-            "device_num": state.get("device_num", 0),
+            "device_num": state.get("device_num", "0x00"),
             "command": state.get("command", "Unknown"),
             "raw_data": state.get("raw_data", "No data"),
             "signature": state.get("signature", "Unknown"),

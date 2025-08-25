@@ -43,7 +43,7 @@ async def async_setup_entry(
     
     # Add existing devices
     for device_key, device_info in coordinator.devices.items():
-        if device_info["device_type"] == "plug":
+        if device_info["device_type"] == "plug" and not device_info.get("is_cmd_sensor", False):
             async_add_switch(device_key, device_info)
     
     # Register callback for new devices
@@ -53,7 +53,7 @@ async def async_setup_entry(
         # Create a copy of the devices to avoid dictionary changed size during iteration
         devices_copy = dict(coordinator.devices)
         for device_key, device_info in devices_copy.items():
-            if device_info["device_type"] == "plug" and device_key not in added_devices:
+            if device_info["device_type"] == "plug" and not device_info.get("is_cmd_sensor", False) and device_key not in added_devices:
                 async_add_switch(device_key, device_info)
     
     # Listen for coordinator updates

@@ -907,13 +907,17 @@ class EzvilleRS485Client:
             device_key = f"{device_type}_{room_id}_cmd_{command:02X}"
         else:
             # Single devices (fan, gas, energy, elevator, doorbell, thermostat)
-            device_name = f"{device_type.title()} Cmd 0x{command:02X}"
+            if device_type == "fan":
+                # Fan should display as Ventilation
+                device_name = f"Ventilation Cmd 0x{command:02X}"
+            else:
+                device_name = f"{device_type.title()} Cmd 0x{command:02X}"
             device_key = f"{device_type}_cmd_{command:02X}"
         
         # Create state data
         state = {
             "device_id": f"0x{device_id:02X}",
-            "device_num": device_num,
+            "device_num": f"0x{device_num:02X}",
             "command": f"0x{command:02X}",
             "data": packet.hex(),
             "packet_length": len(packet)
@@ -976,7 +980,7 @@ class EzvilleRS485Client:
         # Extract state data - store full packet data
         state = {
             "device_id": f"0x{device_id:02X}",
-            "device_num": device_num,
+            "device_num": f"0x{device_num:02X}",
             "command": f"0x{command:02X}",
             "data": packet.hex(),  # Full packet data
             "signature": signature,

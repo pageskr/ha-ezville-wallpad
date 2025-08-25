@@ -726,7 +726,11 @@ class EzvilleWallpadCoordinator(DataUpdateCoordinator):
             # Format: doorbell_cmd_41, elevator_cmd_41, thermostat_cmd_41 etc.
             if len(parts) >= 3 and parts[1] == "cmd":
                 cmd = parts[2].upper()
-                return f"{base_device_type.title()} Cmd 0x{cmd}"
+                if base_device_type == "fan":
+                    # Fan should display as Ventilation
+                    return f"Ventilation Cmd 0x{cmd}"
+                else:
+                    return f"{base_device_type.title()} Cmd 0x{cmd}"
         
         # Fallback
         return device_key.replace("_", " ").title()
