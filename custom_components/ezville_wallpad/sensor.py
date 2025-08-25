@@ -78,14 +78,16 @@ async def async_setup_entry(
             else:
                 _LOGGER.debug("Unknown device sensor %s already added", device_key)
         
-        # Add CMD sensor
-        if device_type == "cmd_sensor":
+        # Add CMD sensor - check by is_cmd_sensor flag
+        if device_info.get("is_cmd_sensor", False):
             if f"{device_key}_state" not in added_devices:
                 added_devices.add(f"{device_key}_state")
                 entities.append(EzvilleCmdSensor(coordinator, device_key, device_info))
-                _LOGGER.info("Added CMD sensor for %s with device_info: %s", device_key, device_info)
+                base_device_type = device_type
+                log_info(_LOGGER, base_device_type, "Added CMD sensor for %s with device_info: %s", device_key, device_info)
             else:
-                _LOGGER.debug("CMD sensor %s already added", device_key)
+                base_device_type = device_type
+                log_debug(_LOGGER, base_device_type, "CMD sensor %s already added", device_key)
         
         if entities:
             _LOGGER.info("Adding %d entities to Home Assistant", len(entities))
@@ -97,7 +99,9 @@ async def async_setup_entry(
     _LOGGER.info("Adding existing devices to sensor platform")
     for device_key, device_info in coordinator.devices.items():
         _LOGGER.debug("Checking device %s with type %s", device_key, device_info.get("device_type"))
-        if device_info["device_type"] in ["plug", "energy", "thermostat", "unknown", "cmd_sensor"]:
+        device_type = device_info["device_type"]
+        # Check for sensors: regular device types or CMD sensors
+        if device_type in ["plug", "energy", "thermostat", "unknown"] or device_info.get("is_cmd_sensor", False):
             async_add_sensors(device_key, device_info)
     
     # Register callback for new devices
@@ -108,7 +112,9 @@ async def async_setup_entry(
         # Create a copy of the devices to avoid dictionary changed size during iteration
         devices_copy = dict(coordinator.devices)
         for device_key, device_info in devices_copy.items():
-            if device_info["device_type"] in ["plug", "energy", "thermostat", "unknown", "cmd_sensor"]:
+            device_type = device_info["device_type"]
+            # Check for sensors: regular device types or CMD sensors
+            if device_type in ["plug", "energy", "thermostat", "unknown"] or device_info.get("is_cmd_sensor", False):
                 async_add_sensors(device_key, device_info)
     
     # Listen for coordinator updates
@@ -502,34 +508,23 @@ class EzvilleCmdSensor(CoordinatorEntity, SensorEntity):
         
         self._device_key = device_key
         self._device_info = device_info
-        base_device_type = device_info.get("base_device_type", "")
+        base_device_type = device_info.get("device_type", "")
+        base_device_key = device_info.get("base_device_key", "")
         
         # Entity attributes
         self._attr_unique_id = f"{DOMAIN}_{device_key}_state"
         self._attr_name = device_info.get("name", "Unknown CMD")
         self._attr_icon = "mdi:console-network"
         
-        # Device info - group with base device type
+        # Device info - group with base device
         from .device import EzvilleWallpadDevice
-        base_device = EzvilleWallpadDevice(coordinator, device_key, self._attr_unique_id, self._attr_name)
-        # Override device info to group with base device
-        if base_device_type:
-            # Parse device key to get room info for grouping
-            parts = device_key.split("_")
-            if base_device_type in ["light", "plug", "thermostat"] and len(parts) >= 2:
-                room_id = parts[1]
-                # Create proper device key for grouping
-                group_device_key = f"{base_device_type}_{room_id}"
-                if base_device_type == "thermostat":
-                    group_device_key = "thermostat"  # All thermostats group together
-            else:
-                # Single devices
-                group_device_key = base_device_type
-            
-            # Get device info from the base device group
-            base_device_for_group = EzvilleWallpadDevice(coordinator, group_device_key, "", "")
+        if base_device_key:
+            # Get device info from the base device for grouping
+            base_device_for_group = EzvilleWallpadDevice(coordinator, base_device_key, "", "")
             self._attr_device_info = base_device_for_group.device_info
         else:
+            # Fallback
+            base_device = EzvilleWallpadDevice(coordinator, device_key, self._attr_unique_id, self._attr_name)
             self._attr_device_info = base_device.device_info
         
         # Add timestamp attributes
@@ -537,7 +532,9 @@ class EzvilleCmdSensor(CoordinatorEntity, SensorEntity):
         self._first_detected = time.time()
         self._last_detected = time.time()
         
-        _LOGGER.debug("Initialized CMD sensor: %s (base_type: %s)", self._attr_name, base_device_type)
+        # Log with proper device type
+        log_debug(_LOGGER, base_device_type, "Initialized CMD sensor: %s (device_type: %s, base_key: %s)", 
+                  self._attr_name, base_device_type, base_device_key)
 
     @property
     def native_value(self) -> Optional[str]:
@@ -623,7 +620,7 @@ class EzvilleUnknownSensor(CoordinatorEntity, SensorEntity):
         # Entity attributes
         self._attr_unique_id = f"{DOMAIN}_{device_key}_state"
         # Create entity name with signature (8 hex chars)
-        if device_id and device_id != "system":
+        if device_id and device_id != "parent":
             # device_id is the signature (8 hex chars)
             self._attr_name = f"Unknown {device_id}"
         else:

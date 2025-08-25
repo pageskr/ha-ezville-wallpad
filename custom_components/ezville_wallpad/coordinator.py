@@ -280,7 +280,7 @@ class EzvilleWallpadCoordinator(DataUpdateCoordinator):
                 _LOGGER.info("Creating Unknown parent device")
                 self.devices[unknown_parent_key] = {
                     "device_type": "unknown",
-                    "device_id": "system",
+                    "device_id": "parent",
                     "name": "Unknown",
                     "state": {}
                 }
@@ -498,7 +498,7 @@ class EzvilleWallpadCoordinator(DataUpdateCoordinator):
                 _LOGGER.info("Creating Unknown parent device in callback")
                 self.devices[unknown_parent_key] = {
                     "device_type": "unknown",
-                    "device_id": "system",
+                    "device_id": "parent",
                     "name": "Unknown",
                     "state": {}
                 }
@@ -511,18 +511,39 @@ class EzvilleWallpadCoordinator(DataUpdateCoordinator):
             base_device_type = device_type.replace("_cmd", "")
             device_key = device_id  # For CMD sensors, device_id is already the full key
             
-            _LOGGER.info("==> CMD sensor callback: base_type=%s, device_key=%s, state=%s",
-                         base_device_type, device_key, state)
+            # Get logging enabled device types from options
+            log_device_types = self.options.get("logging_device_types", [])
+            should_log = base_device_type in log_device_types
             
-            # Create device entry for CMD sensor
+            if should_log:
+                log_info(_LOGGER, base_device_type, "==> CMD sensor callback: base_type=%s, device_key=%s, state=%s",
+                             base_device_type, device_key, state)
+            
+            # Create device entry for CMD sensor - use base device type for grouping
             if device_key not in self.devices:
+                # Get the base device key for grouping
+                parts = device_key.split("_")
+                if base_device_type in ["light", "plug"]:
+                    # light_1_cmd_41 -> light_1 for grouping
+                    base_device_key = f"{base_device_type}_{parts[1]}"
+                elif base_device_type == "thermostat":
+                    # All thermostats group together
+                    base_device_key = "thermostat"
+                else:
+                    # Single devices (fan, gas, energy, elevator, doorbell)
+                    base_device_key = base_device_type
+                
                 self.devices[device_key] = {
-                    "device_type": "cmd_sensor",
-                    "base_device_type": base_device_type,
+                    "device_type": base_device_type,  # Use base device type for proper grouping
+                    "is_cmd_sensor": True,  # Flag to identify CMD sensors
+                    "base_device_key": base_device_key,  # For grouping
                     "device_id": device_id,
                     "name": self._get_cmd_sensor_name(base_device_type, device_key),
                     "state": state
                 }
+                
+                if should_log:
+                    log_info(_LOGGER, base_device_type, "Created new CMD sensor: %s", device_key)
                 
                 # Load sensor platform if needed
                 from homeassistant.const import Platform
@@ -536,6 +557,8 @@ class EzvilleWallpadCoordinator(DataUpdateCoordinator):
             else:
                 # Update existing device
                 self.devices[device_key]["state"] = state
+                if should_log:
+                    log_debug(_LOGGER, base_device_type, "Updated CMD sensor state: %s", device_key)
             
             # Trigger coordinator update
             if threading.current_thread() is threading.main_thread():
@@ -694,20 +717,13 @@ class EzvilleWallpadCoordinator(DataUpdateCoordinator):
         parts = device_key.split("_")
         
         if base_device_type in ["light", "plug"]:
-            # Format: light_1_2_cmd_41 or plug_1_2_cmd_41
-            if len(parts) >= 5 and parts[3] == "cmd":
-                room_id = parts[1]
-                device_num = parts[2]
-                cmd = parts[4].upper()
-                return f"{base_device_type.title()} {room_id} {device_num} Cmd 0x{cmd}"
-        elif base_device_type == "thermostat":
-            # Format: thermostat_1_cmd_41
+            # Format: light_1_cmd_41 or plug_1_cmd_41
             if len(parts) >= 4 and parts[2] == "cmd":
                 room_id = parts[1]
                 cmd = parts[3].upper()
                 return f"{base_device_type.title()} {room_id} Cmd 0x{cmd}"
         else:
-            # Format: doorbell_cmd_41, elevator_cmd_41, etc.
+            # Format: doorbell_cmd_41, elevator_cmd_41, thermostat_cmd_41 etc.
             if len(parts) >= 3 and parts[1] == "cmd":
                 cmd = parts[2].upper()
                 return f"{base_device_type.title()} Cmd 0x{cmd}"

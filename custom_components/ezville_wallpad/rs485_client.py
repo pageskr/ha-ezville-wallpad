@@ -897,24 +897,16 @@ class EzvilleRS485Client:
         
         # Create sensor name based on device type
         if device_type in ["light", "plug"]:
-            # Extract room and device number
+            # Extract room number
             if device_type == "light":
                 room_id = device_num & 0x0F
-                # Format: "Light 1 1 Cmd 0x??" where first 1 is room, second 1 is device number within room
-                # For grouping, we'll use a simple incrementing number for each unique device_num
-                device_name = f"{device_type.title()} {room_id} {room_id} Cmd 0x{command:02X}"
-                device_key = f"{device_type}_{room_id}_{room_id}_cmd_{command:02X}"
             else:  # plug
                 room_id = device_num >> 4
-                # Format: "Plug 1 1 Cmd 0x??" 
-                device_name = f"{device_type.title()} {room_id} {room_id} Cmd 0x{command:02X}"
-                device_key = f"{device_type}_{room_id}_{room_id}_cmd_{command:02X}"
-        elif device_type == "thermostat":
-            room_id = device_num >> 4
+            # Format: "Light 1 Cmd 0x??" or "Plug 1 Cmd 0x??"
             device_name = f"{device_type.title()} {room_id} Cmd 0x{command:02X}"
             device_key = f"{device_type}_{room_id}_cmd_{command:02X}"
         else:
-            # Single devices
+            # Single devices (fan, gas, energy, elevator, doorbell, thermostat)
             device_name = f"{device_type.title()} Cmd 0x{command:02X}"
             device_key = f"{device_type}_cmd_{command:02X}"
         
@@ -938,9 +930,10 @@ class EzvilleRS485Client:
             self._discovered_devices.add(device_key)
             log_info(_LOGGER, device_type, "=> NEW CMD SENSOR discovered: %s", device_key)
             
-            # Call discovery callbacks
+            # Call discovery callbacks with device_type_cmd to indicate CMD sensor
             for callback in self._device_discovery_callbacks:
                 try:
+                    # Pass device_type_cmd and device_key as device_id
                     callback(f"{device_type}_cmd", device_key)
                 except Exception as err:
                     log_error(_LOGGER, device_type, "Error in discovery callback: %s", err)
