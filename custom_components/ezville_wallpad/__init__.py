@@ -74,10 +74,25 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         )
         file_handler.setFormatter(formatter)
         
-        # Add handler to logger
-        logger = logging.getLogger("custom_components.ezville_wallpad")
-        logger.addHandler(file_handler)
-        logger.setLevel(logging.DEBUG)
+        # Get all loggers for this integration
+        loggers_to_setup = [
+            "custom_components.ezville_wallpad",
+            "custom_components.ezville_wallpad.coordinator",
+            "custom_components.ezville_wallpad.sensor",
+            "custom_components.ezville_wallpad.rs485_client"
+        ]
+        
+        for logger_name in loggers_to_setup:
+            logger = logging.getLogger(logger_name)
+            # Remove existing file handlers to avoid duplicates
+            for handler in logger.handlers[:]:
+                if isinstance(handler, TimedRotatingFileHandler):
+                    logger.removeHandler(handler)
+            
+            # Add file handler
+            logger.addHandler(file_handler)
+            # Set propagate to False to prevent duplicate logs
+            logger.propagate = False
         
         _LOGGER.info("File logging configured at: %s", log_file)
     else:

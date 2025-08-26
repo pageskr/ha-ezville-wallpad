@@ -327,11 +327,11 @@ class EzvilleRS485Client:
             # Check if this is a new or changed packet
             if signature not in self._previous_mqtt_values or self._previous_mqtt_values[signature] != msg:
                 hex_msg = ' '.join([f"{b:02x}" for b in msg])
-                log_info(_LOGGER, "unknown", "Converted hex message: %s", hex_msg)
+                log_debug(_LOGGER, "unknown", "Converted hex message: %s", hex_msg)
                 
                 # Check if value has changed
                 if signature in self._previous_mqtt_values:
-                    log_info(_LOGGER, "unknown", "Updated signature %s: %s", signature, ' '.join([f"{b:02x}" for b in msg[4:]]))
+                    log_debug(_LOGGER, "unknown", "Updated signature %s: %s", signature, ' '.join([f"{b:02x}" for b in msg[4:]]))
                 else:
                     log_info(_LOGGER, "unknown", "Created signature %s: %s", signature, ' '.join([f"{b:02x}" for b in msg[4:]]))
                 
@@ -947,24 +947,30 @@ class EzvilleRS485Client:
                 except Exception as err:
                     log_error(_LOGGER, device_type, "Error in discovery callback: %s", err)
         
-        # Update state
-        old_full_state = self._device_states.get(device_key, {}).copy()
-        self._device_states[device_key] = state
+        # Check if state has changed - compare the actual packet data
+        old_state = self._device_states.get(device_key, {})
+        state_changed = old_state.get("data") != state.get("data")
         
-        # Call callback if registered
-        callback_type = f"{device_type}_cmd"
-        if callback_type in self._callbacks:
-            log_debug(_LOGGER, device_type, "=> Calling callback for %s with key=%s, state=%s", 
-                         callback_type, device_key, state)
-            self._callbacks[callback_type](callback_type, device_key, state)
-            log_debug(_LOGGER, device_type, "=> Callback completed for %s", device_key)
+        if state_changed:
+            # Update state
+            self._device_states[device_key] = state
+            
+            # Call callback if registered
+            callback_type = f"{device_type}_cmd"
+            if callback_type in self._callbacks:
+                log_debug(_LOGGER, device_type, "=> Calling callback for %s with key=%s, state=%s", 
+                             callback_type, device_key, state)
+                self._callbacks[callback_type](callback_type, device_key, state)
+                log_debug(_LOGGER, device_type, "=> Callback completed for %s", device_key)
+            else:
+                # Try to use the device type callback
+                if device_type in self._callbacks:
+                    log_debug(_LOGGER, device_type, "=> Calling device callback for cmd sensor %s with key=%s, state=%s", 
+                                 device_type, device_key, state)
+                    self._callbacks[device_type](callback_type, device_key, state)
+                    log_debug(_LOGGER, device_type, "=> Device callback completed for cmd sensor %s", device_key)
         else:
-            # Try to use the device type callback
-            if device_type in self._callbacks:
-                log_debug(_LOGGER, device_type, "=> Calling device callback for cmd sensor %s with key=%s, state=%s", 
-                             device_type, device_key, state)
-                self._callbacks[device_type](callback_type, device_key, state)
-                log_debug(_LOGGER, device_type, "=> Device callback completed for cmd sensor %s", device_key)
+            log_debug(_LOGGER, device_type, "=> CMD sensor %s state unchanged, skipping callback", device_key)
     
     def _handle_unknown_device(self, packet: bytes):
         """Handle unknown devices and create entries for them."""
@@ -1008,7 +1014,7 @@ class EzvilleRS485Client:
                 except Exception as err:
                     log_error(_LOGGER, "unknown", "Error in discovery callback: %s", err)
         
-        # Check if state has changed
+        # Check if state has changed - compare the actual packet data
         old_state = self._device_states.get(device_key, {})
         state_changed = old_state.get("data") != state.get("data")
         
@@ -1027,7 +1033,7 @@ class EzvilleRS485Client:
             
             log_info(_LOGGER, "unknown", "=> Unknown device %s updated with state: %s", device_key, state)
         else:
-            log_debug(_LOGGER, "unknown", "=> Unknown device %s state unchanged, skipping update", device_key)
+            log_debug(_LOGGER, "unknown", "=> Unknown device %s state unchanged, skipping callback", device_key)
 
     def _parse_state(self, device_type: str, packet: bytes) -> Optional[Dict[str, Any]]:
         """Parse state packet based on device type."""

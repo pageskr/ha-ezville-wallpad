@@ -1,4 +1,5 @@
 """Constants for Ezville Wallpad integration."""
+import logging
 
 DOMAIN = "ezville_wallpad"
 MANUFACTURER = "Pages in Korea (pages.kr)"
@@ -39,32 +40,52 @@ def get_device_type_from_packet(packet):
     
     return device_id_map.get(device_id, "unknown")
 
+def _log_to_file_only(logger, level, message, *args):
+    """Log message only to file handlers."""
+    # Create LogRecord manually
+    record = logger.makeRecord(
+        logger.name, level, "(unknown file)", 0,
+        message, args, None
+    )
+    # Only send to file handlers (not to Home Assistant log)
+    for handler in logger.handlers:
+        if hasattr(handler, 'baseFilename'):  # File handler
+            handler.emit(record)
+
 def log_debug(logger, device_type, message, *args):
     """Log debug message if logging is enabled for the device type."""
     if _should_log_device(device_type):
-        logger.debug(message, *args)
+        # Debug only goes to file
+        _log_to_file_only(logger, logging.DEBUG, message, *args)
 
 def log_info(logger, device_type, message, *args):
     """Log info message if logging is enabled for the device type."""
     if _should_log_device(device_type):
-        logger.info(message, *args)
+        # Info only goes to file
+        _log_to_file_only(logger, logging.INFO, message, *args)
 
 def log_warning(logger, device_type, message, *args):
     """Log warning message if logging is enabled for the device type."""
     if _should_log_device(device_type):
+        # Warning goes to both file and HA log
         logger.warning(message, *args)
 
 def log_error(logger, device_type, message, *args):
     """Log error message if logging is enabled for the device type."""
     if _should_log_device(device_type):
+        # Error goes to both file and HA log
         logger.error(message, *args)
 
 def log_system(logger, message, *args):
     """Log system message if general logging is enabled."""
-    from . import LOGGING_ENABLED
-    if not LOGGING_ENABLED:
-        return
-    logger.info(message, *args)
+    try:
+        from . import LOGGING_ENABLED
+        if not LOGGING_ENABLED:
+            return
+        # System messages only go to file
+        _log_to_file_only(logger, logging.INFO, message, *args)
+    except:
+        pass
 
 # Configuration keys
 CONF_SERIAL_PORT = "serial_port"

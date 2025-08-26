@@ -157,6 +157,9 @@ class EzvillePowerSensor(CoordinatorEntity, SensorEntity):
         base_device = EzvilleWallpadDevice(coordinator, device_key, self._attr_unique_id, self._attr_name)
         self._attr_device_info = base_device.device_info
         
+        # Initialize state tracking
+        self._last_state = None
+        
         _LOGGER.debug("Initialized power sensor: %s", self._attr_name)
 
     @property
@@ -173,9 +176,17 @@ class EzvillePowerSensor(CoordinatorEntity, SensorEntity):
 
     def _handle_coordinator_update(self) -> None:
         """Handle updated data from the coordinator."""
-        # Update last detected time only when state changes
-        import time
-        self._last_detected = time.time()
+        # Get current state
+        device = self.coordinator.devices.get(self._device_key, {})
+        current_state = device.get("state", {})
+        
+        # Check if state actually changed
+        if self._last_state == current_state:
+            # No change, skip update
+            return
+        
+        # State changed, update last state
+        self._last_state = current_state.copy()
         
         # Schedule update safely from any thread
         if hasattr(self, 'hass') and self.hass:
@@ -219,25 +230,29 @@ class EzvilleEnergyMeterSensor(CoordinatorEntity, SensorEntity):
         self._device_key = device_key
         self._device_info = device_info
         self._attr_unique_id = f"{DOMAIN}_{device_key}_meter"
-        self._attr_name = "Energy Meter"
+        self._attr_name = f"{device_info.get('name', 'Energy')} Meter"
         self._attr_device_class = SensorDeviceClass.ENERGY
         self._attr_state_class = SensorStateClass.TOTAL_INCREASING
         self._attr_native_unit_of_measurement = UnitOfEnergy.KILO_WATT_HOUR
         
-        # Device info - use unknown device grouping
+        # Device info
         from .device import EzvilleWallpadDevice
         base_device = EzvilleWallpadDevice(coordinator, device_key, self._attr_unique_id, self._attr_name)
         self._attr_device_info = base_device.device_info
         
-        _LOGGER.debug("Initialized energy sensor: %s", self._attr_name)
+        # Initialize state tracking
+        self._last_state = None
+        
+        _LOGGER.debug("Initialized energy meter sensor: %s", self._attr_name)
 
     @property
     def native_value(self) -> Optional[float]:
         """Return the state of the sensor."""
         device = self.coordinator.devices.get(self._device_key, {})
         state = device.get("state", {})
-        # Energy meter already provides kWh value, no conversion needed
-        return state.get("usage", 0)
+        # Convert from units to kWh
+        usage = state.get("usage", 0)
+        return usage / 100.0 if usage > 0 else 0
 
     @property
     def available(self) -> bool:
@@ -246,15 +261,23 @@ class EzvilleEnergyMeterSensor(CoordinatorEntity, SensorEntity):
 
     def _handle_coordinator_update(self) -> None:
         """Handle updated data from the coordinator."""
-        # Update last detected time
-        import time
-        self._last_detected = time.time()
+        # Get current state
+        device = self.coordinator.devices.get(self._device_key, {})
+        current_state = device.get("state", {})
+        
+        # Check if state actually changed
+        if self._last_state == current_state:
+            # No change, skip update
+            return
+        
+        # State changed, update last state
+        self._last_state = current_state.copy()
         
         # Schedule update safely from any thread
         if hasattr(self, 'hass') and self.hass:
             self.hass.loop.call_soon_threadsafe(self.async_write_ha_state)
         else:
-            _LOGGER.debug("===> Cannot update state for %s - hass not available", self._attr_name)
+            log_debug(_LOGGER, "energy", "===> Cannot update state for %s - hass not available", self._attr_name)
 
     async def async_added_to_hass(self) -> None:
         """When entity is added to hass."""
@@ -264,7 +287,7 @@ class EzvilleEnergyMeterSensor(CoordinatorEntity, SensorEntity):
             self._device_key,
             self._handle_coordinator_update
         )
-        _LOGGER.debug("Energy sensor %s added to hass", self._attr_name)
+        log_debug(_LOGGER, "energy", "Energy meter sensor %s added to hass", self._attr_name)
 
     async def async_will_remove_from_hass(self) -> None:
         """When entity will be removed from hass."""
@@ -274,7 +297,7 @@ class EzvilleEnergyMeterSensor(CoordinatorEntity, SensorEntity):
             self._device_key,
             self._handle_coordinator_update
         )
-        _LOGGER.debug("Energy sensor %s removed from hass", self._attr_name)
+        log_debug(_LOGGER, "energy", "Energy meter sensor %s removed from hass", self._attr_name)
 
 
 class EzvilleEnergyPowerSensor(CoordinatorEntity, SensorEntity):
@@ -291,22 +314,29 @@ class EzvilleEnergyPowerSensor(CoordinatorEntity, SensorEntity):
         self._device_key = device_key
         self._device_info = device_info
         self._attr_unique_id = f"{DOMAIN}_{device_key}_power"
-        self._attr_name = "Energy Power"
+        self._attr_name = f"{device_info.get('name', 'Energy')} Power"
         self._attr_device_class = SensorDeviceClass.POWER
         self._attr_state_class = SensorStateClass.MEASUREMENT
         self._attr_native_unit_of_measurement = UnitOfPower.WATT
         
-        # Device info from coordinator
-        self._attr_device_info = coordinator.get_device_info(device_key)
+        # Device info
+        from .device import EzvilleWallpadDevice
+        base_device = EzvilleWallpadDevice(coordinator, device_key, self._attr_unique_id, self._attr_name)
+        self._attr_device_info = base_device.device_info
         
-        log_debug(_LOGGER, "energy", "Initialized energy power sensor: %s", self._attr_name)
+        # Initialize state tracking
+        self._last_state = None
+        
+        _LOGGER.debug("Initialized energy power sensor: %s", self._attr_name)
 
     @property
     def native_value(self) -> Optional[float]:
         """Return the state of the sensor."""
         device = self.coordinator.devices.get(self._device_key, {})
         state = device.get("state", {})
-        return state.get("power", 0)
+        # Convert from units to watts
+        power = state.get("power", 0)
+        return power * 10 if power > 0 else 0
 
     @property
     def available(self) -> bool:
@@ -315,11 +345,23 @@ class EzvilleEnergyPowerSensor(CoordinatorEntity, SensorEntity):
 
     def _handle_coordinator_update(self) -> None:
         """Handle updated data from the coordinator."""
+        # Get current state
+        device = self.coordinator.devices.get(self._device_key, {})
+        current_state = device.get("state", {})
+        
+        # Check if state actually changed
+        if self._last_state == current_state:
+            # No change, skip update
+            return
+        
+        # State changed, update last state
+        self._last_state = current_state.copy()
+        
         # Schedule update safely from any thread
         if hasattr(self, 'hass') and self.hass:
             self.hass.loop.call_soon_threadsafe(self.async_write_ha_state)
         else:
-            log_debug(_LOGGER, "energy", "Cannot update state for %s - hass not available", self._attr_name)
+            log_debug(_LOGGER, "energy", "===> Cannot update state for %s - hass not available", self._attr_name)
 
     async def async_added_to_hass(self) -> None:
         """When entity is added to hass."""
@@ -355,24 +397,19 @@ class EzvilleThermostatCurrentSensor(CoordinatorEntity, SensorEntity):
         super().__init__(coordinator)
         self._device_key = device_key
         self._device_info = device_info
-        self._attr_unique_id = f"{DOMAIN}_{device_key}_current_temp"
-        
-        # Extract room number for naming
-        parts = device_key.split("_")
-        if len(parts) >= 2:
-            room_num = parts[1]
-            self._attr_name = f"Thermostat {room_num} Current"
-        else:
-            self._attr_name = f"{device_info.get('name', 'Thermostat')} Current"
-        
+        self._attr_unique_id = f"{DOMAIN}_{device_key}_current_temperature"
+        self._attr_name = f"{device_info.get('name', 'Thermostat')} Current Temperature"
         self._attr_device_class = SensorDeviceClass.TEMPERATURE
         self._attr_state_class = SensorStateClass.MEASUREMENT
         self._attr_native_unit_of_measurement = UnitOfTemperature.CELSIUS
         
-        # Device info - use single thermostat grouping
+        # Device info
         from .device import EzvilleWallpadDevice
         base_device = EzvilleWallpadDevice(coordinator, device_key, self._attr_unique_id, self._attr_name)
         self._attr_device_info = base_device.device_info
+        
+        # Initialize state tracking
+        self._last_state = None
         
         _LOGGER.debug("Initialized thermostat current temperature sensor: %s", self._attr_name)
 
@@ -381,7 +418,7 @@ class EzvilleThermostatCurrentSensor(CoordinatorEntity, SensorEntity):
         """Return the state of the sensor."""
         device = self.coordinator.devices.get(self._device_key, {})
         state = device.get("state", {})
-        return state.get("current_temperature", 0)
+        return state.get("current_temperature", None)
 
     @property
     def available(self) -> bool:
@@ -390,9 +427,17 @@ class EzvilleThermostatCurrentSensor(CoordinatorEntity, SensorEntity):
 
     def _handle_coordinator_update(self) -> None:
         """Handle updated data from the coordinator."""
-        # Update last detected time
-        import time
-        self._last_detected = time.time()
+        # Get current state
+        device = self.coordinator.devices.get(self._device_key, {})
+        current_state = device.get("state", {})
+        
+        # Check if state actually changed
+        if self._last_state == current_state:
+            # No change, skip update
+            return
+        
+        # State changed, update last state
+        self._last_state = current_state.copy()
         
         # Schedule update safely from any thread
         if hasattr(self, 'hass') and self.hass:
@@ -434,24 +479,19 @@ class EzvilleThermostatTargetSensor(CoordinatorEntity, SensorEntity):
         super().__init__(coordinator)
         self._device_key = device_key
         self._device_info = device_info
-        self._attr_unique_id = f"{DOMAIN}_{device_key}_target_temp"
-        
-        # Extract room number for naming
-        parts = device_key.split("_")
-        if len(parts) >= 2:
-            room_num = parts[1]
-            self._attr_name = f"Thermostat {room_num} Target"
-        else:
-            self._attr_name = f"{device_info.get('name', 'Thermostat')} Target"
-        
+        self._attr_unique_id = f"{DOMAIN}_{device_key}_target_temperature"
+        self._attr_name = f"{device_info.get('name', 'Thermostat')} Target Temperature"
         self._attr_device_class = SensorDeviceClass.TEMPERATURE
         self._attr_state_class = SensorStateClass.MEASUREMENT
         self._attr_native_unit_of_measurement = UnitOfTemperature.CELSIUS
         
-        # Device info - use single thermostat grouping
+        # Device info
         from .device import EzvilleWallpadDevice
         base_device = EzvilleWallpadDevice(coordinator, device_key, self._attr_unique_id, self._attr_name)
         self._attr_device_info = base_device.device_info
+        
+        # Initialize state tracking
+        self._last_state = None
         
         _LOGGER.debug("Initialized thermostat target temperature sensor: %s", self._attr_name)
 
@@ -460,7 +500,7 @@ class EzvilleThermostatTargetSensor(CoordinatorEntity, SensorEntity):
         """Return the state of the sensor."""
         device = self.coordinator.devices.get(self._device_key, {})
         state = device.get("state", {})
-        return state.get("target_temperature", 0)
+        return state.get("target_temperature", None)
 
     @property
     def available(self) -> bool:
@@ -469,9 +509,17 @@ class EzvilleThermostatTargetSensor(CoordinatorEntity, SensorEntity):
 
     def _handle_coordinator_update(self) -> None:
         """Handle updated data from the coordinator."""
-        # Update last detected time
-        import time
-        self._last_detected = time.time()
+        # Get current state
+        device = self.coordinator.devices.get(self._device_key, {})
+        current_state = device.get("state", {})
+        
+        # Check if state actually changed
+        if self._last_state == current_state:
+            # No change, skip update
+            return
+        
+        # State changed, update last state
+        self._last_state = current_state.copy()
         
         # Schedule update safely from any thread
         if hasattr(self, 'hass') and self.hass:
@@ -528,10 +576,8 @@ class EzvilleCmdSensor(CoordinatorEntity, SensorEntity):
             base_device = EzvilleWallpadDevice(coordinator, device_key, self._attr_unique_id, self._attr_name)
             self._attr_device_info = base_device.device_info
         
-        # Add timestamp attributes
-        import time
-        self._first_detected = time.time()
-        self._last_detected = time.time()
+        # Initialize state tracking
+        self._last_state = None
         
         # Log with proper device type
         log_debug(_LOGGER, base_device_type, "Initialized CMD sensor: %s (device_type: %s, base_key: %s)", 
@@ -551,16 +597,12 @@ class EzvilleCmdSensor(CoordinatorEntity, SensorEntity):
         device = self.coordinator.devices.get(self._device_key, {})
         state = device.get("state", {})
         
-        from datetime import datetime
-        
         attributes = {
             "device_id": state.get("device_id", "Unknown"),
             "device_num": state.get("device_num", "0x00"),
             "command": state.get("command", "Unknown"),
             "raw_data": state.get("raw_data", "No data"),
-            "packet_length": state.get("packet_length", 0),
-            "first_detected": datetime.fromtimestamp(self._first_detected).isoformat(),
-            "last_detected": datetime.fromtimestamp(self._last_detected).isoformat()
+            "packet_length": state.get("packet_length", 0)
         }
         
         return attributes
@@ -572,15 +614,26 @@ class EzvilleCmdSensor(CoordinatorEntity, SensorEntity):
 
     def _handle_coordinator_update(self) -> None:
         """Handle updated data from the coordinator."""
-        # Update last detected time
-        import time
-        self._last_detected = time.time()
+        # Get current state
+        device = self.coordinator.devices.get(self._device_key, {})
+        current_state = device.get("state", {})
+        
+        # Check if state actually changed - compare only data field for CMD sensors
+        if self._last_state is not None and self._last_state.get("data") == current_state.get("data"):
+            # No change, skip update
+            base_device_type = self._device_info.get("device_type", "")
+            log_debug(_LOGGER, base_device_type, "CMD sensor state unchanged, skipping update for %s", self._attr_name)
+            return
+        
+        # State changed, update last state
+        self._last_state = current_state.copy()
         
         # Schedule update safely from any thread
         if hasattr(self, 'hass') and self.hass:
             self.hass.loop.call_soon_threadsafe(self.async_write_ha_state)
         else:
-            _LOGGER.debug("===> Cannot update state for %s - hass not available", self._attr_name)
+            base_device_type = self._device_info.get("device_type", "")
+            log_debug(_LOGGER, base_device_type, "===> Cannot update state for %s - hass not available", self._attr_name)
 
     async def async_added_to_hass(self) -> None:
         """When entity is added to hass."""
@@ -590,7 +643,8 @@ class EzvilleCmdSensor(CoordinatorEntity, SensorEntity):
             self._device_key,
             self._handle_coordinator_update
         )
-        _LOGGER.debug("CMD sensor %s added to hass", self._attr_name)
+        base_device_type = self._device_info.get("device_type", "")
+        log_debug(_LOGGER, base_device_type, "CMD sensor %s added to hass", self._attr_name)
 
     async def async_will_remove_from_hass(self) -> None:
         """When entity will be removed from hass."""
@@ -600,7 +654,8 @@ class EzvilleCmdSensor(CoordinatorEntity, SensorEntity):
             self._device_key,
             self._handle_coordinator_update
         )
-        _LOGGER.debug("CMD sensor %s removed from hass", self._attr_name)
+        base_device_type = self._device_info.get("device_type", "")
+        log_debug(_LOGGER, base_device_type, "CMD sensor %s removed from hass", self._attr_name)
 
 
 class EzvilleUnknownSensor(CoordinatorEntity, SensorEntity):
@@ -629,10 +684,8 @@ class EzvilleUnknownSensor(CoordinatorEntity, SensorEntity):
         base_device = EzvilleWallpadDevice(coordinator, device_key, self._attr_unique_id, self._attr_name)
         self._attr_device_info = base_device.device_info
         
-        # Add timestamp attributes
-        import time
-        self._first_detected = time.time()
-        self._last_detected = time.time()
+        # Initialize state tracking
+        self._last_state = None
         
         _LOGGER.debug("Initialized unknown device sensor: %s (device_id: %s)", self._attr_name, device_id)
 
@@ -650,17 +703,12 @@ class EzvilleUnknownSensor(CoordinatorEntity, SensorEntity):
         device = self.coordinator.devices.get(self._device_key, {})
         state = device.get("state", {})
         
-        import time
-        from datetime import datetime
-        
         attributes = {
             "device_id": state.get("device_id", "Unknown"),
             "device_num": state.get("device_num", "0x00"),
             "command": state.get("command", "Unknown"),
             "raw_data": state.get("raw_data", "No data"),
-            "signature": state.get("signature", "Unknown"),
-            "first_detected": datetime.fromtimestamp(self._first_detected).isoformat(),
-            "last_detected": datetime.fromtimestamp(self._last_detected).isoformat()
+            "signature": state.get("signature", "Unknown")
         }
         
         return attributes
@@ -672,6 +720,18 @@ class EzvilleUnknownSensor(CoordinatorEntity, SensorEntity):
 
     def _handle_coordinator_update(self) -> None:
         """Handle updated data from the coordinator."""
+        # Get current state
+        device = self.coordinator.devices.get(self._device_key, {})
+        current_state = device.get("state", {})
+        
+        # Check if state actually changed - compare only data field for unknown sensors
+        if self._last_state is not None and self._last_state.get("data") == current_state.get("data"):
+            # No change, skip update
+            return
+        
+        # State changed, update last state
+        self._last_state = current_state.copy()
+        
         # Schedule update safely from any thread
         if hasattr(self, 'hass') and self.hass:
             self.hass.loop.call_soon_threadsafe(self.async_write_ha_state)
