@@ -43,7 +43,7 @@ async def async_setup_entry(
     
     if entities:
         async_add_entities(entities)
-        _LOGGER.info("Added %d valve entities", len(entities))
+        log_info(_LOGGER, "gas", "Added %d valve entities", len(entities))
 
 
 class EzvilleGasValve(CoordinatorEntity, ValveEntity):
@@ -126,7 +126,7 @@ class EzvilleGasValve(CoordinatorEntity, ValveEntity):
         if hasattr(self, 'hass') and self.hass:
             self.hass.loop.call_soon_threadsafe(self.async_write_ha_state)
         else:
-            _LOGGER.debug("Cannot update state - hass not available")
+            log_debug(_LOGGER, "gas", "Cannot update state - hass not available")
 
     async def async_added_to_hass(self) -> None:
         """When entity is added to hass."""

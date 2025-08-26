@@ -48,7 +48,7 @@ async def async_setup_entry(
     
     if entities:
         async_add_entities(entities)
-        _LOGGER.info("Added %d climate entities", len(entities))
+        log_info(_LOGGER, "thermostat", "Added %d climate entities", len(entities))
     
     # Track added devices
     added_devices = set()
@@ -62,7 +62,7 @@ async def async_setup_entry(
             added_devices.add(device_key)
             entity = EzvilleThermostat(coordinator, device_key, device_info)
             async_add_entities([entity])
-            _LOGGER.info("Added new thermostat entity: %s", device_key)
+            log_info(_LOGGER, "thermostat", "Added new thermostat entity: %s", device_key)
     
     # Add existing devices that weren't added yet
     for device_key, device_info in coordinator.devices.items():
@@ -230,7 +230,7 @@ class EzvilleThermostat(CoordinatorEntity, ClimateEntity):
         if hasattr(self, 'hass') and self.hass:
             self.hass.loop.call_soon_threadsafe(self.async_write_ha_state)
         else:
-            _LOGGER.debug("Cannot update state - hass not available")
+            log_debug(_LOGGER, "thermostat", "Cannot update state - hass not available")
 
     async def async_added_to_hass(self) -> None:
         """When entity is added to hass."""

@@ -583,14 +583,14 @@ class EzvilleRS485Client:
                             # Check if new device
                             if device_key not in self._discovered_devices:
                                 self._discovered_devices.add(device_key)
-                                _LOGGER.info("=> NEW DEVICE discovered: %s", device_key)
+                                log_info(_LOGGER, device_type, "=> NEW DEVICE discovered: %s", device_key)
                                 
                                 # Call discovery callbacks
                                 for callback in self._device_discovery_callbacks:
                                     try:
                                         callback(device_type, f"{room_id}_{light_num}")
                                     except Exception as err:
-                                        _LOGGER.error("Error in discovery callback: %s", err)
+                                        log_error(_LOGGER, device_type, "Error in discovery callback: %s", err)
                             
                             # Update state
                             old_full_state = self._device_states.get(device_key, {}).copy()
@@ -662,14 +662,14 @@ class EzvilleRS485Client:
                             # Check if new device
                             if device_key not in self._discovered_devices:
                                 self._discovered_devices.add(device_key)
-                                _LOGGER.info("=> NEW DEVICE discovered: %s", device_key)
+                                log_info(_LOGGER, device_type, "=> NEW DEVICE discovered: %s", device_key)
                                 
                                 # Call discovery callbacks
                                 for callback in self._device_discovery_callbacks:
                                     try:
                                         callback(device_type, f"{room_id}_{plug_num}")
                                     except Exception as err:
-                                        _LOGGER.error("Error in discovery callback: %s", err)
+                                        log_error(_LOGGER, device_type, "Error in discovery callback: %s", err)
                             
                             # Update state
                             old_full_state = self._device_states.get(device_key, {}).copy()
@@ -691,7 +691,7 @@ class EzvilleRS485Client:
                     
                     # Log raw data for analysis
                     if len(packet) > 5:
-                        _LOGGER.debug("=> Thermostat packet data: %s", 
+                        log_debug(_LOGGER, device_type, "=> Thermostat packet data: %s", 
                                      ' '.join([f'{b:02X}' for b in packet[5:]]))
                     
                     # Different parsing based on packet format
@@ -702,7 +702,7 @@ class EzvilleRS485Client:
                         # bytes 12-13: temp pair 2
                         # bytes 14-15: temp pair 3
                         # bytes 16-17: temp pair 4
-                        _LOGGER.info("=> Special thermostat packet format detected")
+                        log_info(_LOGGER, device_type, "=> Special thermostat packet format detected")
                         
                         # Parse temperature pairs starting from byte 10
                         temp_start = 10
@@ -714,7 +714,7 @@ class EzvilleRS485Client:
                             if idx + 1 < len(packet) and (packet[idx] > 0 or packet[idx + 1] > 0):
                                 room_count += 1
                         
-                        _LOGGER.info("=> Found %d thermostat(s) with temperature data", room_count)
+                        log_info(_LOGGER, device_type, "=> Found %d thermostat(s) with temperature data", room_count)
                         
                         # Process each temperature pair
                         for i in range(room_count):
@@ -758,13 +758,13 @@ class EzvilleRS485Client:
                                 # Device discovery and callback handling
                                 if device_key not in self._discovered_devices:
                                     self._discovered_devices.add(device_key)
-                                    _LOGGER.info("=> NEW DEVICE discovered: %s", device_key)
+                                    log_info(_LOGGER, device_type, "=> NEW DEVICE discovered: %s", device_key)
                                     
                                     for callback in self._device_discovery_callbacks:
                                         try:
                                             callback(device_type, thermostat_room)
                                         except Exception as err:
-                                            _LOGGER.error("Error in discovery callback: %s", err)
+                                            log_error(_LOGGER, device_type, "Error in discovery callback: %s", err)
                                 
                                 # Update state
                                 old_full_state = self._device_states.get(device_key, {}).copy()
@@ -779,7 +779,7 @@ class EzvilleRS485Client:
                     else:
                         # Standard thermostat packet format
                         room_count = (data_length - 5) // 2 if data_length > 5 else 0
-                        _LOGGER.info("=> Standard format, calculated room count: %d", room_count)
+                        log_info(_LOGGER, device_type, "=> Standard format, calculated room count: %d", room_count)
                         
                         # Process each thermostat
                         for thermo_idx in range(0, min(room_count, 15)):
@@ -788,7 +788,7 @@ class EzvilleRS485Client:
                             
                             # Check if we have enough data
                             if len(packet) < 8 + thermo_idx * 2 + 3:
-                                _LOGGER.warning("Not enough data for thermostat room %d", thermostat_room)
+                                log_warning(_LOGGER, device_type, "Not enough data for thermostat room %d", thermostat_room)
                                 continue
                             
                             # Extract state from standard format
@@ -825,13 +825,13 @@ class EzvilleRS485Client:
                             # Device discovery and callback handling
                             if device_key not in self._discovered_devices:
                                 self._discovered_devices.add(device_key)
-                                _LOGGER.info("=> NEW DEVICE discovered: %s", device_key)
+                                log_info(_LOGGER, device_type, "=> NEW DEVICE discovered: %s", device_key)
                                 
                                 for callback in self._device_discovery_callbacks:
                                     try:
                                         callback(device_type, thermostat_room)
                                     except Exception as err:
-                                        _LOGGER.error("Error in discovery callback: %s", err)
+                                        log_error(_LOGGER, device_type, "Error in discovery callback: %s", err)
                             
                             # Update state
                             old_full_state = self._device_states.get(device_key, {}).copy()
@@ -866,14 +866,14 @@ class EzvilleRS485Client:
             # Check if new device
             if device_key not in self._discovered_devices:
                 self._discovered_devices.add(device_key)
-                _LOGGER.info("=> NEW DEVICE discovered: %s", device_key)
+                log_info(_LOGGER, device_type, "=> NEW DEVICE discovered: %s", device_key)
                 
                 # Call discovery callbacks
                 for callback in self._device_discovery_callbacks:
                     try:
                         callback(device_type, None)  # No device_id for single devices
                     except Exception as err:
-                        _LOGGER.error("Error in discovery callback: %s", err)
+                        log_error(_LOGGER, device_type, "Error in discovery callback: %s", err)
             
             # Update state
             old_full_state = self._device_states.get(device_key, {}).copy()
@@ -1045,13 +1045,13 @@ class EzvilleRS485Client:
                 state["speed"] = packet[7] if packet[7] <= 3 else 0
                 mode_val = packet[8] & 0x03
                 state["mode"] = "bypass" if mode_val == 0x01 else "heat" if mode_val == 0x03 else "unknown"
-                _LOGGER.debug("Fan state parsed: %s", state)
+                log_debug(_LOGGER, device_type, "Fan state parsed: %s", state)
         
         elif device_type == "gas":
             if len(packet) > 6:
                 valve_state = (packet[6] & 0x1F) >> 4
                 state["closed"] = valve_state != 0x01  # 0x01 = open
-                _LOGGER.debug("Gas valve state parsed: %s", state)
+                log_debug(_LOGGER, device_type, "Gas valve state parsed: %s", state)
         
         elif device_type == "energy":
             if len(packet) > 12:
@@ -1075,14 +1075,14 @@ class EzvilleRS485Client:
                     except:
                         state["current_power"] = 0.0
                         
-                log_debug(_LOGGER, "energy", "Energy state parsed: %s", state)
+                log_debug(_LOGGER, device_type, "Energy state parsed: %s", state)
         
         elif device_type == "elevator":
             if len(packet) > 6:
                 status_val = packet[6] >> 4
                 state["status"] = status_val
                 state["floor"] = packet[6] & 0x0F
-                _LOGGER.debug("Elevator state parsed: %s", state)
+                log_debug(_LOGGER, device_type, "Elevator state parsed: %s", state)
         
         elif device_type == "doorbell":
             if len(packet) > 4:
@@ -1094,7 +1094,7 @@ class EzvilleRS485Client:
                 
                 state["ring"] = ring_state
                 state["ringing"] = ring_state or ringing_state  # For binary sensor
-                _LOGGER.debug("Doorbell state parsed: ring=%s, ringing=%s", ring_state, ringing_state)
+                log_debug(_LOGGER, device_type, "Doorbell state parsed: ring=%s, ringing=%s", ring_state, ringing_state)
         
         # Note: light, plug, thermostat are handled in _process_packet directly
         

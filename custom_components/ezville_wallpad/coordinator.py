@@ -122,14 +122,14 @@ class EzvilleWallpadCoordinator(DataUpdateCoordinator):
         # Register device callbacks only for enabled capabilities
         for device_type in self.capabilities:
             self.client.register_callback(device_type, self._device_update_callback)
-            _LOGGER.debug("Registered callback for device type: %s", device_type)
+            log_debug(_LOGGER, device_type, "Registered callback for device type: %s", device_type)
         
         # Always register callback for unknown devices
         self.client.register_callback("unknown", self._device_update_callback)
-        _LOGGER.debug("Registered callback for unknown devices")
+        log_debug(_LOGGER, "unknown", "Registered callback for unknown devices")
         
         # Unknown devices will be created dynamically when discovered
-        _LOGGER.info("Unknown devices will be created dynamically when discovered")
+        log_info(_LOGGER, "unknown", "Unknown devices will be created dynamically when discovered")
 
     def _initialize_default_devices(self):
         """Initialize default devices for enabled capabilities."""
@@ -472,7 +472,7 @@ class EzvilleWallpadCoordinator(DataUpdateCoordinator):
         """Handle device state updates."""
         # Always log unknown devices
         if device_type == "unknown":
-            _LOGGER.info("==> Unknown device callback: device_type=%s, device_id=%s, state=%s",
+            log_info(_LOGGER, device_type, "==> Unknown device callback: device_type=%s, device_id=%s, state=%s",
                          device_type, device_id, state)
         
         # Check if this is a CMD sensor
@@ -683,7 +683,7 @@ class EzvilleWallpadCoordinator(DataUpdateCoordinator):
 
     async def send_command(self, device_type: str, device_id: Any, command: str, payload: Any):
         """Send a command to a device."""
-        _LOGGER.debug("Sending command %s to %s_%s with payload %s", 
+        log_debug(_LOGGER, device_type, "Sending command %s to %s_%s with payload %s", 
                      command, device_type, device_id if device_id else "(single)", payload)
         
         # For single devices, device_id might be None

@@ -39,44 +39,44 @@ async def async_setup_entry(
         entities = []
         device_type = device_info.get("device_type")
         
-        _LOGGER.debug("async_add_sensors called for device_key=%s, device_type=%s", device_key, device_type)
+        log_debug(_LOGGER, device_type, "async_add_sensors called for device_key=%s, device_type=%s", device_key, device_type)
         
         # Add plug power sensor
         if device_type == "plug" and not device_info.get("is_cmd_sensor", False) and f"{device_key}_power" not in added_devices:
             added_devices.add(f"{device_key}_power")
             entities.append(EzvillePowerSensor(coordinator, device_key, device_info))
-            _LOGGER.info("Added power sensor for %s", device_key)
+            log_info(_LOGGER, device_type, "Added power sensor for %s", device_key)
         
         # Add energy monitor sensors
         if device_type == "energy":
             if f"{device_key}_meter" not in added_devices:
                 added_devices.add(f"{device_key}_meter")
                 entities.append(EzvilleEnergyMeterSensor(coordinator, device_key, device_info))
-                log_info(_LOGGER, "energy", "Added energy meter sensor for %s", device_key)
+                log_info(_LOGGER, device_type, "Added energy meter sensor for %s", device_key)
             if f"{device_key}_power" not in added_devices:
                 added_devices.add(f"{device_key}_power")
                 entities.append(EzvilleEnergyPowerSensor(coordinator, device_key, device_info))
-                log_info(_LOGGER, "energy", "Added energy power sensor for %s", device_key)
+                log_info(_LOGGER, device_type, "Added energy power sensor for %s", device_key)
         
         # Add thermostat temperature sensors
         if device_type == "thermostat":
             if f"{device_key}_current_temp" not in added_devices:
                 added_devices.add(f"{device_key}_current_temp")
                 entities.append(EzvilleThermostatCurrentSensor(coordinator, device_key, device_info))
-                _LOGGER.info("Added thermostat current temperature sensor for %s", device_key)
+                log_info(_LOGGER, device_type, "Added thermostat current temperature sensor for %s", device_key)
             if f"{device_key}_target_temp" not in added_devices:
                 added_devices.add(f"{device_key}_target_temp")
                 entities.append(EzvilleThermostatTargetSensor(coordinator, device_key, device_info))
-                _LOGGER.info("Added thermostat target temperature sensor for %s", device_key)
+                log_info(_LOGGER, device_type, "Added thermostat target temperature sensor for %s", device_key)
         
         # Add unknown device sensor
         if device_type == "unknown":
             if f"{device_key}_state" not in added_devices:
                 added_devices.add(f"{device_key}_state")
                 entities.append(EzvilleUnknownSensor(coordinator, device_key, device_info))
-                _LOGGER.info("Added unknown device sensor for %s with device_info: %s", device_key, device_info)
+                log_info(_LOGGER, device_type, "Added unknown device sensor for %s with device_info: %s", device_key, device_info)
             else:
-                _LOGGER.debug("Unknown device sensor %s already added", device_key)
+                log_debug(_LOGGER, device_type, "Unknown device sensor %s already added", device_key)
         
         # Add CMD sensor - check by is_cmd_sensor flag
         if device_info.get("is_cmd_sensor", False):
@@ -87,7 +87,7 @@ async def async_setup_entry(
                 log_info(_LOGGER, base_device_type, "Added CMD sensor for %s with device_info: %s", device_key, device_info)
             else:
                 base_device_type = device_type
-                log_debug(_LOGGER, base_device_type, "CMD sensor %s already added", device_key)
+                #log_debug(_LOGGER, base_device_type, "CMD sensor %s already added", device_key)
         
         if entities:
             _LOGGER.info("Adding %d entities to Home Assistant", len(entities))
@@ -98,8 +98,8 @@ async def async_setup_entry(
     # Add existing devices
     _LOGGER.info("Adding existing devices to sensor platform")
     for device_key, device_info in coordinator.devices.items():
-        _LOGGER.debug("Checking device %s with type %s", device_key, device_info.get("device_type"))
         device_type = device_info["device_type"]
+        log_debug(_LOGGER, device_type, "Checking device %s with type %s", device_key, device_info.get("device_type"))
         # Check for sensors: regular device types or CMD sensors
         if device_type in ["plug", "energy", "thermostat", "unknown"] or device_info.get("is_cmd_sensor", False):
             async_add_sensors(device_key, device_info)
@@ -160,7 +160,7 @@ class EzvillePowerSensor(CoordinatorEntity, SensorEntity):
         # Initialize state tracking
         self._last_state = None
         
-        _LOGGER.debug("Initialized power sensor: %s", self._attr_name)
+        log_debug(_LOGGER, "plug", "Initialized power sensor: %s", self._attr_name)
 
     @property
     def native_value(self) -> Optional[float]:
@@ -203,7 +203,7 @@ class EzvillePowerSensor(CoordinatorEntity, SensorEntity):
             self._device_key,
             self._handle_coordinator_update
         )
-        _LOGGER.debug("Power sensor %s added to hass", self._attr_name)
+        log_debug(_LOGGER, "plug", "Power sensor %s added to hass", self._attr_name)
 
     async def async_will_remove_from_hass(self) -> None:
         """When entity will be removed from hass."""
@@ -213,7 +213,7 @@ class EzvillePowerSensor(CoordinatorEntity, SensorEntity):
             self._device_key,
             self._handle_coordinator_update
         )
-        _LOGGER.debug("Power sensor %s removed from hass", self._attr_name)
+        log_debug(_LOGGER, device_type, "Power sensor %s removed from hass", self._attr_name)
 
 
 class EzvilleEnergyMeterSensor(CoordinatorEntity, SensorEntity):
@@ -243,7 +243,7 @@ class EzvilleEnergyMeterSensor(CoordinatorEntity, SensorEntity):
         # Initialize state tracking
         self._last_state = None
         
-        _LOGGER.debug("Initialized energy meter sensor: %s", self._attr_name)
+        log_debug(_LOGGER, "energy", "Initialized energy meter sensor: %s", self._attr_name)
 
     @property
     def native_value(self) -> Optional[float]:
@@ -326,7 +326,7 @@ class EzvilleEnergyPowerSensor(CoordinatorEntity, SensorEntity):
         # Initialize state tracking
         self._last_state = None
         
-        _LOGGER.debug("Initialized energy power sensor: %s", self._attr_name)
+        log_debug(_LOGGER, "energy", "Initialized energy power sensor: %s", self._attr_name)
 
     @property
     def native_value(self) -> Optional[float]:
@@ -409,7 +409,7 @@ class EzvilleThermostatCurrentSensor(CoordinatorEntity, SensorEntity):
         # Initialize state tracking
         self._last_state = None
         
-        _LOGGER.debug("Initialized thermostat current temperature sensor: %s", self._attr_name)
+        log_debug(_LOGGER, "thermostat", "Initialized thermostat current temperature sensor: %s", self._attr_name)
 
     @property
     def native_value(self) -> Optional[float]:
@@ -441,7 +441,7 @@ class EzvilleThermostatCurrentSensor(CoordinatorEntity, SensorEntity):
         if hasattr(self, 'hass') and self.hass:
             self.hass.loop.call_soon_threadsafe(self.async_write_ha_state)
         else:
-            _LOGGER.debug("===> Cannot update state for %s - hass not available", self._attr_name)
+            log_debug(_LOGGER, "thermostat", "===> Cannot update state for %s - hass not available", self._attr_name)
 
     async def async_added_to_hass(self) -> None:
         """When entity is added to hass."""
@@ -451,7 +451,7 @@ class EzvilleThermostatCurrentSensor(CoordinatorEntity, SensorEntity):
             self._device_key,
             self._handle_coordinator_update
         )
-        _LOGGER.debug("Thermostat current temperature sensor %s added to hass", self._attr_name)
+        log_debug(_LOGGER, "thermostat", "Thermostat current temperature sensor %s added to hass", self._attr_name)
 
     async def async_will_remove_from_hass(self) -> None:
         """When entity will be removed from hass."""
@@ -461,7 +461,7 @@ class EzvilleThermostatCurrentSensor(CoordinatorEntity, SensorEntity):
             self._device_key,
             self._handle_coordinator_update
         )
-        _LOGGER.debug("Thermostat current temperature sensor %s removed from hass", self._attr_name)
+        log_debug(_LOGGER, "thermostat", "Thermostat current temperature sensor %s removed from hass", self._attr_name)
 
 
 class EzvilleThermostatTargetSensor(CoordinatorEntity, SensorEntity):
@@ -491,7 +491,7 @@ class EzvilleThermostatTargetSensor(CoordinatorEntity, SensorEntity):
         # Initialize state tracking
         self._last_state = None
         
-        _LOGGER.debug("Initialized thermostat target temperature sensor: %s", self._attr_name)
+        log_debug(_LOGGER, "thermostat", "Initialized thermostat target temperature sensor: %s", self._attr_name)
 
     @property
     def native_value(self) -> Optional[float]:
@@ -523,7 +523,7 @@ class EzvilleThermostatTargetSensor(CoordinatorEntity, SensorEntity):
         if hasattr(self, 'hass') and self.hass:
             self.hass.loop.call_soon_threadsafe(self.async_write_ha_state)
         else:
-            _LOGGER.debug("===> Cannot update state for %s - hass not available", self._attr_name)
+            log_debug(_LOGGER, "thermostat", "===> Cannot update state for %s - hass not available", self._attr_name)
 
     async def async_added_to_hass(self) -> None:
         """When entity is added to hass."""
@@ -533,7 +533,7 @@ class EzvilleThermostatTargetSensor(CoordinatorEntity, SensorEntity):
             self._device_key,
             self._handle_coordinator_update
         )
-        _LOGGER.debug("Thermostat target temperature sensor %s added to hass", self._attr_name)
+        log_debug(_LOGGER, "thermostat", "Thermostat target temperature sensor %s added to hass", self._attr_name)
 
     async def async_will_remove_from_hass(self) -> None:
         """When entity will be removed from hass."""
@@ -543,7 +543,7 @@ class EzvilleThermostatTargetSensor(CoordinatorEntity, SensorEntity):
             self._device_key,
             self._handle_coordinator_update
         )
-        _LOGGER.debug("Thermostat target temperature sensor %s removed from hass", self._attr_name)
+        log_debug(_LOGGER, "thermostat", "Thermostat target temperature sensor %s removed from hass", self._attr_name)
 
 
 class EzvilleCmdSensor(CoordinatorEntity, SensorEntity):
@@ -685,7 +685,7 @@ class EzvilleUnknownSensor(CoordinatorEntity, SensorEntity):
         # Initialize state tracking
         self._last_state = None
         
-        _LOGGER.debug("Initialized unknown device sensor: %s (device_id: %s)", self._attr_name, device_id)
+        log_debug(_LOGGER, "unknown", "Initialized unknown device sensor: %s (device_id: %s)", self._attr_name, device_id)
 
     @property
     def native_value(self) -> Optional[str]:
@@ -734,7 +734,7 @@ class EzvilleUnknownSensor(CoordinatorEntity, SensorEntity):
         if hasattr(self, 'hass') and self.hass:
             self.hass.loop.call_soon_threadsafe(self.async_write_ha_state)
         else:
-            _LOGGER.debug("===> Cannot update state for %s - hass not available", self._attr_name)
+            log_debug(_LOGGER, "unknown", "===> Cannot update state for %s - hass not available", self._attr_name)
 
     async def async_added_to_hass(self) -> None:
         """When entity is added to hass."""
@@ -744,7 +744,7 @@ class EzvilleUnknownSensor(CoordinatorEntity, SensorEntity):
             self._device_key,
             self._handle_coordinator_update
         )
-        _LOGGER.debug("Unknown device sensor %s added to hass", self._attr_name)
+        log_debug(_LOGGER, "unknown", "Unknown device sensor %s added to hass", self._attr_name)
 
     async def async_will_remove_from_hass(self) -> None:
         """When entity will be removed from hass."""
@@ -754,4 +754,4 @@ class EzvilleUnknownSensor(CoordinatorEntity, SensorEntity):
             self._device_key,
             self._handle_coordinator_update
         )
-        _LOGGER.debug("Unknown device sensor %s removed from hass", self._attr_name)
+        log_debug(_LOGGER, "unknown", "Unknown device sensor %s removed from hass", self._attr_name)
