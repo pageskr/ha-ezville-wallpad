@@ -30,6 +30,9 @@ async def async_setup_entry(
     
     entities = []
     for device_key, device_info in coordinator.devices.items():
+        # Skip CMD sensors
+        if device_info.get("is_cmd_sensor", False):
+            continue
         if device_info["device_type"] == "doorbell":
             entities.append(
                 EzvilleDoorbellSensor(
@@ -80,7 +83,8 @@ class EzvilleDoorbellSensor(CoordinatorEntity, BinarySensorEntity):
         """Handle updated data from the coordinator."""
         # Schedule update safely from any thread
         if hasattr(self, 'hass') and self.hass:
-            self.hass.loop.call_soon_threadsafe(self.async_write_ha_state)
+            # Use add_job instead of call_soon_threadsafe
+            self.hass.add_job(self.async_write_ha_state)
         else:
             _LOGGER.warning("Cannot update state - hass not available")
 

@@ -39,6 +39,9 @@ async def async_setup_entry(
     # Add doorbell buttons
     if "doorbell" in coordinator.capabilities:
         for device_key, device_info in coordinator.devices.items():
+            # Skip CMD sensors
+            if device_info.get("is_cmd_sensor", False):
+                continue
             if device_info["device_type"] == "doorbell":
                 entities.extend([
                     EzvilleDoorbellOpenButton(
