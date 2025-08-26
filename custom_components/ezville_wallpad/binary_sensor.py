@@ -83,8 +83,7 @@ class EzvilleDoorbellSensor(CoordinatorEntity, BinarySensorEntity):
         """Handle updated data from the coordinator."""
         # Schedule update safely from any thread
         if hasattr(self, 'hass') and self.hass:
-            # Use add_job instead of call_soon_threadsafe
-            self.hass.add_job(self.async_write_ha_state)
+            self.hass.loop.call_soon_threadsafe(self.async_write_ha_state)
         else:
             _LOGGER.warning("Cannot update state - hass not available")
 

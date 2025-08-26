@@ -12,7 +12,7 @@ from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import DOMAIN, MANUFACTURER, MODEL
+from .const import DOMAIN, MANUFACTURER, MODEL, log_info
 from .coordinator import EzvilleWallpadCoordinator
 
 _LOGGER = logging.getLogger("custom_components.ezville_wallpad.valve")
@@ -32,6 +32,9 @@ async def async_setup_entry(
     
     entities = []
     for device_key, device_info in coordinator.devices.items():
+        # Skip CMD sensors
+        if device_info.get("is_cmd_sensor", False):
+            continue
         if device_info["device_type"] == "gas":
             entities.append(
                 EzvilleGasValve(

@@ -190,7 +190,7 @@ class EzvillePowerSensor(CoordinatorEntity, SensorEntity):
         
         # Schedule update safely from any thread
         if hasattr(self, 'hass') and self.hass:
-            self.hass.add_job(self.async_write_ha_state)
+            self.hass.loop.call_soon_threadsafe(self.async_write_ha_state)
         else:
             base_device_type = self._device_info.get("device_type", "")
             log_debug(_LOGGER, base_device_type, "===> Cannot update state for %s - hass not available", self._attr_name)
@@ -274,7 +274,7 @@ class EzvilleEnergyMeterSensor(CoordinatorEntity, SensorEntity):
         
         # Schedule update safely from any thread
         if hasattr(self, 'hass') and self.hass:
-            self.hass.add_job(self.async_write_ha_state)
+            self.hass.loop.call_soon_threadsafe(self.async_write_ha_state)
         else:
             log_debug(_LOGGER, "energy", "===> Cannot update state for %s - hass not available", self._attr_name)
 
@@ -357,7 +357,7 @@ class EzvilleEnergyPowerSensor(CoordinatorEntity, SensorEntity):
         
         # Schedule update safely from any thread
         if hasattr(self, 'hass') and self.hass:
-            self.hass.add_job(self.async_write_ha_state)
+            self.hass.loop.call_soon_threadsafe(self.async_write_ha_state)
         else:
             log_debug(_LOGGER, "energy", "===> Cannot update state for %s - hass not available", self._attr_name)
 
@@ -439,7 +439,7 @@ class EzvilleThermostatCurrentSensor(CoordinatorEntity, SensorEntity):
         
         # Schedule update safely from any thread
         if hasattr(self, 'hass') and self.hass:
-            self.hass.add_job(self.async_write_ha_state)
+            self.hass.loop.call_soon_threadsafe(self.async_write_ha_state)
         else:
             log_debug(_LOGGER, "thermostat", "===> Cannot update state for %s - hass not available", self._attr_name)
 
@@ -521,7 +521,7 @@ class EzvilleThermostatTargetSensor(CoordinatorEntity, SensorEntity):
         
         # Schedule update safely from any thread
         if hasattr(self, 'hass') and self.hass:
-            self.hass.add_job(self.async_write_ha_state)
+            self.hass.loop.call_soon_threadsafe(self.async_write_ha_state)
         else:
             log_debug(_LOGGER, "thermostat", "===> Cannot update state for %s - hass not available", self._attr_name)
 
@@ -628,7 +628,7 @@ class EzvilleCmdSensor(CoordinatorEntity, SensorEntity):
         
         # Schedule update safely from any thread
         if hasattr(self, 'hass') and self.hass:
-            self.hass.add_job(self.async_write_ha_state)
+            self.hass.loop.call_soon_threadsafe(self.async_write_ha_state)
         else:
             base_device_type = self._device_info.get("device_type", "")
             log_debug(_LOGGER, base_device_type, "===> Cannot update state for %s - hass not available", self._attr_name)
@@ -732,7 +732,7 @@ class EzvilleUnknownSensor(CoordinatorEntity, SensorEntity):
         
         # Schedule update safely from any thread
         if hasattr(self, 'hass') and self.hass:
-            self.hass.add_job(self.async_write_ha_state)
+            self.hass.loop.call_soon_threadsafe(self.async_write_ha_state)
         else:
             log_debug(_LOGGER, "unknown", "===> Cannot update state for %s - hass not available", self._attr_name)
 

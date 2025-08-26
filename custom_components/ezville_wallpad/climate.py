@@ -17,7 +17,7 @@ from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import DOMAIN, MANUFACTURER, MODEL
+from .const import DOMAIN, MANUFACTURER, MODEL, log_info
 from .coordinator import EzvilleWallpadCoordinator
 
 _LOGGER = logging.getLogger("custom_components.ezville_wallpad.climate")
@@ -38,6 +38,9 @@ async def async_setup_entry(
     entities = []
     for device_key, device_info in coordinator.devices.items():
         if device_info["device_type"] == "thermostat":
+            # Skip CMD sensors
+            if device_info.get("is_cmd_sensor", False):
+                continue
             entities.append(
                 EzvilleThermostat(
                     coordinator,
@@ -58,6 +61,9 @@ async def async_setup_entry(
     @callback
     def async_add_thermostats(device_key: str, device_info: dict):
         """Add new thermostat entities."""
+        # Skip CMD sensors
+        if device_info.get("is_cmd_sensor", False):
+            return
         if device_info["device_type"] == "thermostat" and device_key not in added_devices:
             added_devices.add(device_key)
             entity = EzvilleThermostat(coordinator, device_key, device_info)

@@ -318,10 +318,8 @@ class EzvilleWallpadCoordinator(DataUpdateCoordinator):
             # Check if platform needs to be loaded
             self._check_and_load_platform(device_type)
             
-            # Notify that data has been updated - use proper async method
-            async def update_data():
-                self.async_set_updated_data(self.devices)
-            self.hass.async_create_task(update_data())
+            # Notify that data has been updated
+            self.async_set_updated_data(self.devices)
             
             # For unknown devices, also trigger sensor platform loading if not loaded
             if device_type == "unknown":
@@ -544,13 +542,12 @@ class EzvilleWallpadCoordinator(DataUpdateCoordinator):
                         log_debug(_LOGGER, base_device_type, "Updated CMD sensor state: %s", device_key)
                     
                     # Trigger coordinator update only if state changed
-                    async def update_data():
-                        self.async_set_updated_data(self.devices)
-                    
                     if threading.current_thread() is threading.main_thread():
                         self.async_set_updated_data(self.devices)
                     else:
-                        self.hass.async_create_task(update_data())
+                        self.hass.loop.call_soon_threadsafe(
+                            lambda: self.async_set_updated_data(self.devices)
+                        )
                 else:
                     if should_log:
                         log_debug(_LOGGER, base_device_type, "CMD sensor state unchanged: %s", device_key)
@@ -637,14 +634,13 @@ class EzvilleWallpadCoordinator(DataUpdateCoordinator):
         if should_log:
             log_debug(_LOGGER, device_type, "==> Device %s current full info: %s", device_key, self.devices.get(device_key))
         
-        # Trigger coordinator update - use proper async method
-        async def update_data():
-            self.async_set_updated_data(self.devices)
-        
+        # Trigger coordinator update
         if threading.current_thread() is threading.main_thread():
             self.async_set_updated_data(self.devices)
         else:
-            self.hass.async_create_task(update_data())
+            self.hass.loop.call_soon_threadsafe(
+                lambda: self.async_set_updated_data(self.devices)
+            )
         
         # Call entity callbacks if registered (only if state changed or new device)
         if device_key in self._entity_callbacks:

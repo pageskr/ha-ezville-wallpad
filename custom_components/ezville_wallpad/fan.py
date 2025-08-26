@@ -38,6 +38,9 @@ async def async_setup_entry(
     
     entities = []
     for device_key, device_info in coordinator.devices.items():
+        # Skip CMD sensors
+        if device_info.get("is_cmd_sensor", False):
+            continue
         if device_info["device_type"] == "fan":
             entities.append(
                 EzvilleFan(
