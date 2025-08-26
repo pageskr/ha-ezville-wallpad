@@ -39,6 +39,56 @@ LOGGING_ENABLED = False
 LOGGING_DEVICE_TYPES = []
 
 
+def _setup_file_logging(hass: HomeAssistant):
+    """Set up file logging handler."""
+    import os
+    from logging.handlers import TimedRotatingFileHandler
+    
+    # Create logs directory
+    log_dir = os.path.join(hass.config.config_dir, "logs")
+    os.makedirs(log_dir, exist_ok=True)
+    
+    # Create file handler
+    log_file = os.path.join(log_dir, "ezville_wallpad.log")
+    file_handler = TimedRotatingFileHandler(
+        log_file,
+        when="midnight",
+        interval=1,
+        backupCount=7
+    )
+    
+    # Get the root logger's level to follow Home Assistant's log level
+    root_logger = logging.getLogger()
+    file_handler.setLevel(root_logger.level)
+    
+    # Create formatter
+    formatter = logging.Formatter(
+        '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    )
+    file_handler.setFormatter(formatter)
+    
+    # Get all loggers for this integration
+    loggers_to_setup = [
+        "custom_components.ezville_wallpad",
+        "custom_components.ezville_wallpad.coordinator",
+        "custom_components.ezville_wallpad.sensor",
+        "custom_components.ezville_wallpad.rs485_client"
+    ]
+    
+    for logger_name in loggers_to_setup:
+        logger = logging.getLogger(logger_name)
+        # Remove existing file handlers to avoid duplicates
+        for handler in logger.handlers[:]:
+            if isinstance(handler, TimedRotatingFileHandler):
+                logger.removeHandler(handler)
+        
+        # Add file handler
+        logger.addHandler(file_handler)
+        # Don't set propagate to False, let it follow HA's logging structure
+    
+    _LOGGER.info("File logging configured at: %s with level %s", log_file, logging.getLevelName(file_handler.level))
+
+
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up Ezville Wallpad from a config entry."""
     # Set global logging settings
@@ -50,51 +100,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         _LOGGER.info("Starting Ezville Wallpad integration setup with file logging enabled")
         _LOGGER.info("Logging device types: %s", LOGGING_DEVICE_TYPES)
         
-        # Setup file logging
-        import os
-        from logging.handlers import TimedRotatingFileHandler
-        
-        # Create logs directory
-        log_dir = os.path.join(hass.config.config_dir, "logs")
-        os.makedirs(log_dir, exist_ok=True)
-        
-        # Create file handler
-        log_file = os.path.join(log_dir, "ezville_wallpad.log")
-        file_handler = TimedRotatingFileHandler(
-            log_file,
-            when="midnight",
-            interval=1,
-            backupCount=7
-        )
-        file_handler.setLevel(logging.DEBUG)
-        
-        # Create formatter
-        formatter = logging.Formatter(
-            '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-        )
-        file_handler.setFormatter(formatter)
-        
-        # Get all loggers for this integration
-        loggers_to_setup = [
-            "custom_components.ezville_wallpad",
-            "custom_components.ezville_wallpad.coordinator",
-            "custom_components.ezville_wallpad.sensor",
-            "custom_components.ezville_wallpad.rs485_client"
-        ]
-        
-        for logger_name in loggers_to_setup:
-            logger = logging.getLogger(logger_name)
-            # Remove existing file handlers to avoid duplicates
-            for handler in logger.handlers[:]:
-                if isinstance(handler, TimedRotatingFileHandler):
-                    logger.removeHandler(handler)
-            
-            # Add file handler
-            logger.addHandler(file_handler)
-            # Set propagate to False to prevent duplicate logs
-            logger.propagate = False
-        
-        _LOGGER.info("File logging configured at: %s", log_file)
+        # Setup file logging - do it in executor to avoid blocking
+        await hass.async_add_executor_job(_setup_file_logging, hass)
     else:
         _LOGGER.info("Starting Ezville Wallpad integration setup")
     

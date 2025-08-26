@@ -27,7 +27,15 @@ class EzvilleWallpadDevice(CoordinatorEntity):
         
         # Extract device ID from device key
         parts = device_key.split("_")
-        self._device_id = int(parts[1]) if len(parts) > 1 else 0
+        # For unknown devices, parts[1] is the signature (hex string), not an integer
+        if device_key.startswith("unknown_"):
+            self._device_id = parts[1] if len(parts) > 1 else "00000000"
+        else:
+            try:
+                self._device_id = int(parts[1]) if len(parts) > 1 else 0
+            except ValueError:
+                # If conversion fails, keep as string
+                self._device_id = parts[1] if len(parts) > 1 else "0"
 
     @property
     def device_info(self) -> DeviceInfo:

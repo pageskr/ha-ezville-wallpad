@@ -82,7 +82,7 @@ class EzvilleWallpadCoordinator(DataUpdateCoordinator):
         # Always include all capabilities for device discovery
         self.capabilities = [
             "light", "plug", "thermostat", "fan", "gas", 
-            "energy", "elevator", "doorbell"
+            "energy", "elevator", "doorbell", "unknown"
         ]
         
         _LOGGER.info("Initializing coordinator with capabilities: %s", self.capabilities)
@@ -318,10 +318,10 @@ class EzvilleWallpadCoordinator(DataUpdateCoordinator):
             # Check if platform needs to be loaded
             self._check_and_load_platform(device_type)
             
-            # Notify that data has been updated - schedule in event loop
-            self.hass.loop.call_soon_threadsafe(
-                lambda: self.async_set_updated_data(self.devices)
-            )
+            # Notify that data has been updated - use proper async method
+            def update_data():
+                self.async_set_updated_data(self.devices)
+            self.hass.add_job(update_data)
             
             # For unknown devices, also trigger sensor platform loading if not loaded
             if device_type == "unknown":
@@ -544,12 +544,13 @@ class EzvilleWallpadCoordinator(DataUpdateCoordinator):
                         log_debug(_LOGGER, base_device_type, "Updated CMD sensor state: %s", device_key)
                     
                     # Trigger coordinator update only if state changed
+                    def update_data():
+                        self.async_set_updated_data(self.devices)
+                    
                     if threading.current_thread() is threading.main_thread():
                         self.async_set_updated_data(self.devices)
                     else:
-                        self.hass.loop.call_soon_threadsafe(
-                            lambda: self.async_set_updated_data(self.devices)
-                        )
+                        self.hass.add_job(update_data)
                 else:
                     if should_log:
                         log_debug(_LOGGER, base_device_type, "CMD sensor state unchanged: %s", device_key)
@@ -636,13 +637,14 @@ class EzvilleWallpadCoordinator(DataUpdateCoordinator):
         if should_log:
             log_debug(_LOGGER, device_type, "==> Device %s current full info: %s", device_key, self.devices.get(device_key))
         
-        # Trigger coordinator update - schedule in event loop if called from thread
+        # Trigger coordinator update - use proper async method
+        def update_data():
+            self.async_set_updated_data(self.devices)
+        
         if threading.current_thread() is threading.main_thread():
             self.async_set_updated_data(self.devices)
         else:
-            self.hass.loop.call_soon_threadsafe(
-                lambda: self.async_set_updated_data(self.devices)
-            )
+            self.hass.add_job(update_data)
         
         # Call entity callbacks if registered (only if state changed or new device)
         if device_key in self._entity_callbacks:

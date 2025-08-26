@@ -251,8 +251,7 @@ class EzvilleEnergyMeterSensor(CoordinatorEntity, SensorEntity):
         device = self.coordinator.devices.get(self._device_key, {})
         state = device.get("state", {})
         # Convert from units to kWh
-        usage = state.get("usage", 0)
-        return usage / 100.0 if usage > 0 else 0
+        return state.get("usage", 0)
 
     @property
     def available(self) -> bool:
@@ -335,8 +334,7 @@ class EzvilleEnergyPowerSensor(CoordinatorEntity, SensorEntity):
         device = self.coordinator.devices.get(self._device_key, {})
         state = device.get("state", {})
         # Convert from units to watts
-        power = state.get("power", 0)
-        return power * 10 if power > 0 else 0
+        return state.get("power", 0)
 
     @property
     def available(self) -> bool:
