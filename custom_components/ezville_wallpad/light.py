@@ -150,7 +150,7 @@ class EzvilleLight(CoordinatorEntity, LightEntity):
         """Handle updated data from the coordinator."""
         # Schedule update safely from any thread
         if hasattr(self, 'hass') and self.hass:
-            self.hass.loop.call_soon_threadsafe(self.async_write_ha_state)
+            self.hass.loop.call_soon_threadsafe(lambda: self.schedule_update_ha_state(True))
         else:
             _LOGGER.debug("===> Cannot update state for %s - hass not available", self._attr_name)
 

@@ -91,7 +91,8 @@ async def async_setup_entry(
         
         if entities:
             _LOGGER.info("Adding %d entities to Home Assistant", len(entities))
-            async_add_entities(entities)
+            # Call async_add_entities in a thread-safe manner
+            hass.loop.call_soon_threadsafe(async_add_entities, entities)
         else:
             _LOGGER.debug("No entities to add for device_key=%s", device_key)
     
@@ -190,7 +191,7 @@ class EzvillePowerSensor(CoordinatorEntity, SensorEntity):
         
         # Schedule update safely from any thread
         if hasattr(self, 'hass') and self.hass:
-            self.hass.loop.call_soon_threadsafe(self.async_write_ha_state)
+            self.hass.loop.call_soon_threadsafe(lambda: self.schedule_update_ha_state(True))
         else:
             base_device_type = self._device_info.get("device_type", "")
             log_debug(_LOGGER, base_device_type, "===> Cannot update state for %s - hass not available", self._attr_name)
@@ -732,7 +733,7 @@ class EzvilleUnknownSensor(CoordinatorEntity, SensorEntity):
         
         # Schedule update safely from any thread
         if hasattr(self, 'hass') and self.hass:
-            self.hass.loop.call_soon_threadsafe(self.async_write_ha_state)
+            self.hass.loop.call_soon_threadsafe(lambda: self.schedule_update_ha_state(True))
         else:
             log_debug(_LOGGER, "unknown", "===> Cannot update state for %s - hass not available", self._attr_name)
 

@@ -166,7 +166,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         _LOGGER.info("Loading platforms: %s", platforms_to_load)
         # Mark as loaded to prevent duplicate loading
         coordinator._platform_loaded.update(platforms_to_load)
-        await hass.config_entries.async_forward_entry_setups(entry, list(platforms_to_load))
+        
+        # Load platforms sequentially to avoid race conditions
+        for platform in platforms_to_load:
+            try:
+                await hass.config_entries.async_forward_entry_setup(entry, platform)
+                _LOGGER.info("Successfully loaded platform: %s", platform)
+            except Exception as err:
+                _LOGGER.error("Failed to load platform %s: %s", platform, err)
     else:
         _LOGGER.warning("No platforms to load - check capabilities and devices")
 

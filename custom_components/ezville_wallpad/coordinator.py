@@ -318,8 +318,13 @@ class EzvilleWallpadCoordinator(DataUpdateCoordinator):
             # Check if platform needs to be loaded
             self._check_and_load_platform(device_type)
             
-            # Notify that data has been updated
-            self.async_set_updated_data(self.devices)
+            # Notify that data has been updated (thread-safe)
+            if threading.current_thread() is threading.main_thread():
+                self.async_set_updated_data(self.devices)
+            else:
+                self.hass.loop.call_soon_threadsafe(
+                    lambda: self.async_set_updated_data(self.devices)
+                )
             
             # For unknown devices, also trigger sensor platform loading if not loaded
             if device_type == "unknown":
@@ -327,16 +332,31 @@ class EzvilleWallpadCoordinator(DataUpdateCoordinator):
                 if Platform.SENSOR not in self._platform_loaded:
                     _LOGGER.info("Loading sensor platform for unknown device")
                     self._platform_loaded.add(Platform.SENSOR)
-                    self.hass.async_create_task(
-                        self.hass.config_entries.async_forward_entry_setup(
-                            self.config_entry, Platform.SENSOR
+                    # Create task in the event loop thread-safely  
+                    if threading.current_thread() is threading.main_thread():
+                        self.hass.async_create_task(
+                            self.hass.config_entries.async_forward_entry_setup(
+                                self.config_entry, Platform.SENSOR
+                            )
                         )
-                    )
+                    else:
+                        self.hass.loop.call_soon_threadsafe(
+                            lambda: self.hass.async_create_task(
+                                self.hass.config_entries.async_forward_entry_setup(
+                                    self.config_entry, Platform.SENSOR
+                                )
+                            )
+                        )
                 else:
                     # Sensor platform already loaded, manually trigger device_added callback
                     _LOGGER.info("Sensor platform already loaded, triggering manual update")
-                    # Force update of coordinator data
-                    self.async_set_updated_data(self.devices)
+                    # Force update of coordinator data (thread-safe)
+                    if threading.current_thread() is threading.main_thread():
+                        self.async_set_updated_data(self.devices)
+                    else:
+                        self.hass.loop.call_soon_threadsafe(
+                            lambda: self.async_set_updated_data(self.devices)
+                        )
 
     def _check_and_load_platform(self, device_type: str):
         """Check if platform needs to be loaded for device type."""
@@ -377,11 +397,21 @@ class EzvilleWallpadCoordinator(DataUpdateCoordinator):
             # Schedule platform loading
             for platform in platforms_needed:
                 self._platform_loaded.add(platform)
-                self.hass.async_create_task(
-                    self.hass.config_entries.async_forward_entry_setup(
-                        self.config_entry, platform
+                # Create task in the event loop thread-safely
+                if threading.current_thread() is threading.main_thread():
+                    self.hass.async_create_task(
+                        self.hass.config_entries.async_forward_entry_setup(
+                            self.config_entry, platform
+                        )
                     )
-                )
+                else:
+                    self.hass.loop.call_soon_threadsafe(
+                        lambda p=platform: self.hass.async_create_task(
+                            self.hass.config_entries.async_forward_entry_setup(
+                                self.config_entry, p
+                            )
+                        )
+                    )
 
     async def _async_update_data(self) -> Dict[str, Any]:
         """Fetch data from the wallpad."""
