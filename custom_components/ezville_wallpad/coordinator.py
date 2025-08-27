@@ -115,6 +115,35 @@ class EzvilleWallpadCoordinator(DataUpdateCoordinator):
         # Initialize default devices for testing (especially for MQTT)
         if connection_type == CONNECTION_TYPE_MQTT:
             self._initialize_default_devices()
+        else:
+            # For serial/socket connections, load platforms based on capabilities  
+            # Load platforms for all enabled capabilities
+            from homeassistant.const import Platform
+            
+            if "light" in self.capabilities:
+                self._platforms_to_load.add(Platform.LIGHT)
+            if "plug" in self.capabilities:
+                self._platforms_to_load.add(Platform.SWITCH)
+                self._platforms_to_load.add(Platform.SENSOR)
+            if "thermostat" in self.capabilities:
+                self._platforms_to_load.add(Platform.CLIMATE)
+                self._platforms_to_load.add(Platform.SENSOR)
+            if "fan" in self.capabilities:
+                self._platforms_to_load.add(Platform.FAN)
+            if "gas" in self.capabilities:
+                self._platforms_to_load.add(Platform.VALVE)
+            if "energy" in self.capabilities:
+                self._platforms_to_load.add(Platform.SENSOR)
+            if "elevator" in self.capabilities:
+                self._platforms_to_load.add(Platform.BUTTON)
+            if "doorbell" in self.capabilities:
+                self._platforms_to_load.add(Platform.BUTTON)
+                self._platforms_to_load.add(Platform.BINARY_SENSOR)
+            # Always load sensor platform for unknown devices
+            if "unknown" in self.capabilities:
+                self._platforms_to_load.add(Platform.SENSOR)
+            
+            _LOGGER.info("Serial/Socket: Will load platforms for capabilities: %s", self._platforms_to_load)
         
         # Register device discovery callback
         self.client.register_device_discovery_callback(self._on_device_discovered)
@@ -228,8 +257,8 @@ class EzvilleWallpadCoordinator(DataUpdateCoordinator):
                 }
             }
             _LOGGER.debug("Created default thermostat: %s", device_key)
-            
-            _LOGGER.info("Created %d default devices", len(self.devices))
+        
+        _LOGGER.info("Created %d default devices", len(self.devices))
         
         # Determine which platforms need to be loaded
         self._determine_platforms_to_load()
@@ -333,19 +362,16 @@ class EzvilleWallpadCoordinator(DataUpdateCoordinator):
                     _LOGGER.info("Loading sensor platform for unknown device")
                     self._platform_loaded.add(Platform.SENSOR)
                     # Create task in the event loop thread-safely  
-                    if threading.current_thread() is threading.main_thread():
-                        self.hass.async_create_task(
-                            self.hass.config_entries.async_forward_entry_setup(
-                                self.config_entry, Platform.SENSOR
-                            )
+                    async def _setup_platform():
+                        await self.hass.config_entries.async_forward_entry_setup(
+                            self.config_entry, Platform.SENSOR
                         )
+                    
+                    if threading.current_thread() is threading.main_thread():
+                        self.hass.async_create_task(_setup_platform())
                     else:
                         self.hass.loop.call_soon_threadsafe(
-                            lambda: self.hass.async_create_task(
-                                self.hass.config_entries.async_forward_entry_setup(
-                                    self.config_entry, Platform.SENSOR
-                                )
-                            )
+                            lambda: self.hass.async_create_task(_setup_platform())
                         )
                 else:
                     # Sensor platform already loaded, manually trigger device_added callback
@@ -398,19 +424,16 @@ class EzvilleWallpadCoordinator(DataUpdateCoordinator):
             for platform in platforms_needed:
                 self._platform_loaded.add(platform)
                 # Create task in the event loop thread-safely
-                if threading.current_thread() is threading.main_thread():
-                    self.hass.async_create_task(
-                        self.hass.config_entries.async_forward_entry_setup(
-                            self.config_entry, platform
-                        )
+                async def _setup_platform(p):
+                    await self.hass.config_entries.async_forward_entry_setup(
+                        self.config_entry, p
                     )
+                
+                if threading.current_thread() is threading.main_thread():
+                    self.hass.async_create_task(_setup_platform(platform))
                 else:
                     self.hass.loop.call_soon_threadsafe(
-                        lambda p=platform: self.hass.async_create_task(
-                            self.hass.config_entries.async_forward_entry_setup(
-                                self.config_entry, p
-                            )
-                        )
+                        lambda p=platform: self.hass.async_create_task(_setup_platform(p))
                     )
 
     async def _async_update_data(self) -> Dict[str, Any]:
@@ -480,6 +503,10 @@ class EzvilleWallpadCoordinator(DataUpdateCoordinator):
     async def async_config_entry_first_refresh(self) -> None:
         """Perform first refresh."""
         _LOGGER.info("Performing first refresh")
+        _LOGGER.info("Connection type: %s", self.connection_type)
+        _LOGGER.info("Initial devices: %d", len(self.devices))
+        _LOGGER.info("Platforms to load: %s", self._platforms_to_load)
+        
         await self.client.async_connect()
         
         # For non-MQTT connections, do initial polling

@@ -91,8 +91,7 @@ async def async_setup_entry(
         
         if entities:
             _LOGGER.info("Adding %d entities to Home Assistant", len(entities))
-            # Call async_add_entities in a thread-safe manner
-            hass.loop.call_soon_threadsafe(async_add_entities, entities)
+            async_add_entities(entities)
         else:
             _LOGGER.debug("No entities to add for device_key=%s", device_key)
     
