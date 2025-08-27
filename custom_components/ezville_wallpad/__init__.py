@@ -57,15 +57,27 @@ def _setup_file_logging(hass: HomeAssistant):
         backupCount=7
     )
     
-    # Get the root logger's level to follow Home Assistant's log level
-    root_logger = logging.getLogger()
-    file_handler.setLevel(root_logger.level)
+    # Set file handler to always accept DEBUG level
+    # The actual filtering will be done by log_debug function based on HA's logger level
+    file_handler.setLevel(logging.DEBUG)
     
     # Create formatter
     formatter = logging.Formatter(
         '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
     )
     file_handler.setFormatter(formatter)
+    
+    # Add custom filter to check HA's debug level dynamically
+    class DebugFilter(logging.Filter):
+        def filter(self, record):
+            # For DEBUG level, check if the logger has debug enabled in HA
+            if record.levelno == logging.DEBUG:
+                return record.name.startswith("custom_components.ezville_wallpad") and \
+                       logging.getLogger(record.name).isEnabledFor(logging.DEBUG)
+            # For other levels, always log to file
+            return True
+    
+    file_handler.addFilter(DebugFilter())
     
     # Get all loggers for this integration
     loggers_to_setup = [
@@ -86,7 +98,7 @@ def _setup_file_logging(hass: HomeAssistant):
         logger.addHandler(file_handler)
         # Don't set propagate to False, let it follow HA's logging structure
     
-    _LOGGER.info("File logging configured at: %s with level %s", log_file, logging.getLevelName(file_handler.level))
+    _LOGGER.info("File logging configured at: %s (debug logs will follow HA's debug settings)", log_file)
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:

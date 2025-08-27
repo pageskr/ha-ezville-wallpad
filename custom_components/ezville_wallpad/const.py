@@ -54,8 +54,12 @@ def _log_to_file_only(logger, level, message, *args):
 
 def log_debug(logger, device_type, message, *args):
     """Log debug message if logging is enabled for the device type."""
+    # Check if debug is enabled in Home Assistant for this logger
+    if not logger.isEnabledFor(logging.DEBUG):
+        return
+    
     if _should_log_device(device_type):
-        # Debug only goes to file
+        # Debug only goes to file when both HA debug and device logging are enabled
         _log_to_file_only(logger, logging.DEBUG, message, *args)
 
 def log_info(logger, device_type, message, *args):

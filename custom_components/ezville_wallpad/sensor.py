@@ -41,14 +41,8 @@ async def async_setup_entry(
         
         log_debug(_LOGGER, device_type, "async_add_sensors called for device_key=%s, device_type=%s", device_key, device_type)
         
-        # Add plug power sensor
-        if device_type == "plug" and not device_info.get("is_cmd_sensor", False) and f"{device_key}_power" not in added_devices:
-            added_devices.add(f"{device_key}_power")
-            entities.append(EzvillePowerSensor(coordinator, device_key, device_info))
-            log_info(_LOGGER, device_type, "Added power sensor for %s", device_key)
-        
         # Add energy monitor sensors
-        if device_type == "energy":
+        if device_type == "energy" and not device_info.get("is_cmd_sensor", False):
             if f"{device_key}_meter" not in added_devices:
                 added_devices.add(f"{device_key}_meter")
                 entities.append(EzvilleEnergyMeterSensor(coordinator, device_key, device_info))
@@ -58,8 +52,15 @@ async def async_setup_entry(
                 entities.append(EzvilleEnergyPowerSensor(coordinator, device_key, device_info))
                 log_info(_LOGGER, device_type, "Added energy power sensor for %s", device_key)
         
+        # Add plug power sensor
+        if device_type == "plug" and not device_info.get("is_cmd_sensor", False):
+            if f"{device_key}_power" not in added_devices:
+                added_devices.add(f"{device_key}_power")
+                entities.append(EzvillePowerSensor(coordinator, device_key, device_info))
+                log_info(_LOGGER, device_type, "Added power sensor for %s", device_key)
+        
         # Add thermostat temperature sensors
-        if device_type == "thermostat":
+        if device_type == "thermostat" and not device_info.get("is_cmd_sensor", False):
             if f"{device_key}_current_temp" not in added_devices:
                 added_devices.add(f"{device_key}_current_temp")
                 entities.append(EzvilleThermostatCurrentSensor(coordinator, device_key, device_info))
@@ -83,17 +84,15 @@ async def async_setup_entry(
             if f"{device_key}_state" not in added_devices:
                 added_devices.add(f"{device_key}_state")
                 entities.append(EzvilleCmdSensor(coordinator, device_key, device_info))
-                base_device_type = device_type
-                log_info(_LOGGER, base_device_type, "Added CMD sensor for %s with device_info: %s", device_key, device_info)
-            else:
-                base_device_type = device_type
-                #log_debug(_LOGGER, base_device_type, "CMD sensor %s already added", device_key)
+                log_info(_LOGGER, device_type, "Added CMD sensor for %s with device_info: %s", device_key, device_info)
+            #else:
+            #    log_debug(_LOGGER, device_type, "CMD sensor %s already added", device_key)
         
         if entities:
-            _LOGGER.info("Adding %d entities to Home Assistant", len(entities))
             async_add_entities(entities)
+            log_debug(_LOGGER, device_type, "Adding %d entities for device_key=%s", len(entities), device_key)
         else:
-            _LOGGER.debug("No entities to add for device_key=%s", device_key)
+            log_debug(_LOGGER, device_type, "No entities to add for device_key=%s", device_key)
     
     # Add existing devices
     _LOGGER.info("Adding existing devices to sensor platform")
@@ -192,8 +191,8 @@ class EzvillePowerSensor(CoordinatorEntity, SensorEntity):
         if hasattr(self, 'hass') and self.hass:
             self.hass.loop.call_soon_threadsafe(lambda: self.schedule_update_ha_state(True))
         else:
-            base_device_type = self._device_info.get("device_type", "")
-            log_debug(_LOGGER, base_device_type, "===> Cannot update state for %s - hass not available", self._attr_name)
+            device_type = self._device_info.get("device_type", "")
+            log_debug(_LOGGER, device_type, "===> Cannot update state for %s - hass not available", self._attr_name)
 
     async def async_added_to_hass(self) -> None:
         """When entity is added to hass."""

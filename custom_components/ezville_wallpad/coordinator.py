@@ -317,7 +317,7 @@ class EzvilleWallpadCoordinator(DataUpdateCoordinator):
             device_key = device_type
         
         if device_key not in self.devices:
-            _LOGGER.info("Discovered new device: %s (type: %s, id: %s)", device_key, device_type, device_id)
+            log_info(_LOGGER, device_type, "Discovered new device: %s (type: %s, id: %s)", device_key, device_type, device_id)
             
             # Parse device ID to get display name
             if device_type in ["light", "plug"] and isinstance(device_id, str) and "_" in device_id:
@@ -341,8 +341,8 @@ class EzvilleWallpadCoordinator(DataUpdateCoordinator):
                 "state": {}
             }
             
-            _LOGGER.info("Created device entry: key=%s, device=%s", device_key, self.devices[device_key])
-            _LOGGER.info("Total devices after addition: %d", len(self.devices))
+            log_debug(_LOGGER, device_type, "Created device entry: key=%s, device=%s", device_key, self.devices[device_key])
+            log_info(_LOGGER, device_type, "Total devices after addition: %d", len(self.devices))
             
             # Check if platform needs to be loaded
             self._check_and_load_platform(device_type)
@@ -359,7 +359,7 @@ class EzvilleWallpadCoordinator(DataUpdateCoordinator):
             if device_type == "unknown":
                 from homeassistant.const import Platform
                 if Platform.SENSOR not in self._platform_loaded:
-                    _LOGGER.info("Loading sensor platform for unknown device")
+                    log_info(_LOGGER, device_type, "Loading sensor platform for unknown device")
                     self._platform_loaded.add(Platform.SENSOR)
                     # Create task in the event loop thread-safely  
                     async def _setup_platform():
@@ -375,7 +375,7 @@ class EzvilleWallpadCoordinator(DataUpdateCoordinator):
                         )
                 else:
                     # Sensor platform already loaded, manually trigger device_added callback
-                    _LOGGER.info("Sensor platform already loaded, triggering manual update")
+                    log_debug(_LOGGER, device_type, "Sensor platform already loaded, triggering manual update")
                     # Force update of coordinator data (thread-safe)
                     if threading.current_thread() is threading.main_thread():
                         self.async_set_updated_data(self.devices)
@@ -419,7 +419,7 @@ class EzvilleWallpadCoordinator(DataUpdateCoordinator):
             platforms_needed.add(Platform.SENSOR)
         
         if platforms_needed:
-            _LOGGER.info("Loading platforms for %s: %s", device_type, platforms_needed)
+            log_info(_LOGGER, device_type, "Loading platforms for %s: %s", device_type, platforms_needed)
             # Schedule platform loading
             for platform in platforms_needed:
                 self._platform_loaded.add(platform)
