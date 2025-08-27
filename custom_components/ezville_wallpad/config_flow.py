@@ -348,7 +348,7 @@ class EzvilleWallpadOptionsFlowHandler(config_entries.OptionsFlow):
 
     def __init__(self, config_entry: config_entries.ConfigEntry) -> None:
         """Initialize options flow."""
-        self.config_entry = config_entry
+        self._config_entry = config_entry
 
     async def async_step_init(
         self, user_input: Optional[Dict[str, Any]] = None
@@ -358,7 +358,7 @@ class EzvilleWallpadOptionsFlowHandler(config_entries.OptionsFlow):
             _LOGGER.debug("Updating options: %s", user_input)
             return self.async_create_entry(title="", data=user_input)
 
-        connection_type = self.config_entry.data.get(CONF_CONNECTION_TYPE)
+        connection_type = self._config_entry.data.get(CONF_CONNECTION_TYPE)
         
         # Build schema based on connection type
         if connection_type == CONNECTION_TYPE_MQTT:
@@ -366,31 +366,31 @@ class EzvilleWallpadOptionsFlowHandler(config_entries.OptionsFlow):
             data_schema = vol.Schema({
                 vol.Optional(
                     CONF_MQTT_TOPIC_RECV,
-                    default=self.config_entry.data.get(CONF_MQTT_TOPIC_RECV, DEFAULT_MQTT_TOPIC_RECV),
+                    default=self._config_entry.data.get(CONF_MQTT_TOPIC_RECV, DEFAULT_MQTT_TOPIC_RECV),
                 ): str,
                 vol.Optional(
                     CONF_MQTT_TOPIC_SEND,
-                    default=self.config_entry.data.get(CONF_MQTT_TOPIC_SEND, DEFAULT_MQTT_TOPIC_SEND),
+                    default=self._config_entry.data.get(CONF_MQTT_TOPIC_SEND, DEFAULT_MQTT_TOPIC_SEND),
                 ): str,
                 vol.Optional(
                     CONF_MQTT_STATE_SUFFIX,
-                    default=self.config_entry.data.get(CONF_MQTT_STATE_SUFFIX, DEFAULT_MQTT_STATE_SUFFIX),
+                    default=self._config_entry.data.get(CONF_MQTT_STATE_SUFFIX, DEFAULT_MQTT_STATE_SUFFIX),
                 ): str,
                 vol.Optional(
                     CONF_MQTT_COMMAND_SUFFIX,
-                    default=self.config_entry.data.get(CONF_MQTT_COMMAND_SUFFIX, DEFAULT_MQTT_COMMAND_SUFFIX),
+                    default=self._config_entry.data.get(CONF_MQTT_COMMAND_SUFFIX, DEFAULT_MQTT_COMMAND_SUFFIX),
                 ): str,
                 vol.Optional(
                     CONF_MQTT_QOS,
-                    default=self.config_entry.data.get(CONF_MQTT_QOS, DEFAULT_MQTT_QOS),
+                    default=self._config_entry.data.get(CONF_MQTT_QOS, DEFAULT_MQTT_QOS),
                 ): vol.All(vol.Coerce(int), vol.Range(min=0, max=2)),
                 vol.Optional(
                     "enable_file_logging",
-                    default=self.config_entry.options.get("enable_file_logging", False),
+                    default=self._config_entry.options.get("enable_file_logging", False),
                 ): bool,
                 vol.Optional(
                     "logging_device_types",
-                    default=self.config_entry.options.get("logging_device_types", [
+                    default=self._config_entry.options.get("logging_device_types", [
                         "light", "plug", "thermostat", "fan", "gas", 
                         "energy", "elevator", "doorbell", "unknown"
                     ]),
@@ -404,23 +404,23 @@ class EzvilleWallpadOptionsFlowHandler(config_entries.OptionsFlow):
             data_schema = vol.Schema({
                 vol.Optional(
                     "scan_interval",
-                    default=self.config_entry.options.get("scan_interval", DEFAULT_SCAN_INTERVAL),
+                    default=self._config_entry.options.get("scan_interval", DEFAULT_SCAN_INTERVAL),
                 ): vol.All(vol.Coerce(int), vol.Range(min=1, max=300)),
                 vol.Optional(
                     "max_retry",
-                    default=self.config_entry.options.get("max_retry", DEFAULT_MAX_RETRY),
+                    default=self._config_entry.options.get("max_retry", DEFAULT_MAX_RETRY),
                 ): vol.All(vol.Coerce(int), vol.Range(min=3, max=60)),
                 vol.Optional(
                     "dump_time",
-                    default=self.config_entry.options.get("dump_time", 0),
+                    default=self._config_entry.options.get("dump_time", 0),
                 ): vol.All(vol.Coerce(int), vol.Range(min=0, max=60)),
                 vol.Optional(
                     "enable_file_logging",
-                    default=self.config_entry.options.get("enable_file_logging", False),
+                    default=self._config_entry.options.get("enable_file_logging", False),
                 ): bool,
                 vol.Optional(
                     "logging_device_types",
-                    default=self.config_entry.options.get("logging_device_types", [
+                    default=self._config_entry.options.get("logging_device_types", [
                         "light", "plug", "thermostat", "fan", "gas", 
                         "energy", "elevator", "doorbell", "unknown"
                     ]),
