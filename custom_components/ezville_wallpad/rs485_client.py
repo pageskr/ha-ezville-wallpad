@@ -1082,6 +1082,10 @@ class EzvilleRS485Client:
                 status_val = packet[6] >> 4
                 state["status"] = status_val
                 state["floor"] = packet[6] & 0x0F
+                # Add device info and raw packet data
+                state["device_id"] = f"0x{packet[1]:02X}"
+                state["device_num"] = f"0x{packet[2]:02X}"
+                state["raw_packet"] = packet
                 log_debug(_LOGGER, device_type, "Elevator state parsed: %s", state)
         
         elif device_type == "doorbell":

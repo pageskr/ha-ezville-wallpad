@@ -70,6 +70,13 @@ async def async_setup_entry(
                 entities.append(EzvilleThermostatTargetSensor(coordinator, device_key, device_info))
                 log_info(_LOGGER, device_type, "Added thermostat target temperature sensor for %s", device_key)
         
+        # Add elevator calling sensor
+        if device_type == "elevator" and not device_info.get("is_cmd_sensor", False):
+            if f"{device_key}_calling" not in added_devices:
+                added_devices.add(f"{device_key}_calling")
+                entities.append(EzvilleElevatorCallingSensor(coordinator, device_key, device_info))
+                log_info(_LOGGER, device_type, "Added elevator calling sensor for %s", device_key)
+        
         # Add unknown device sensor
         if device_type == "unknown":
             if f"{device_key}_state" not in added_devices:
@@ -100,7 +107,7 @@ async def async_setup_entry(
         device_type = device_info["device_type"]
         log_debug(_LOGGER, device_type, "Checking device %s with type %s", device_key, device_info.get("device_type"))
         # Check for sensors: regular device types or CMD sensors
-        if device_type in ["plug", "energy", "thermostat", "unknown"] or device_info.get("is_cmd_sensor", False):
+        if device_type in ["plug", "energy", "thermostat", "elevator", "unknown"] or device_info.get("is_cmd_sensor", False):
             async_add_sensors(device_key, device_info)
     
     # Register callback for new devices
@@ -113,7 +120,7 @@ async def async_setup_entry(
         for device_key, device_info in devices_copy.items():
             device_type = device_info["device_type"]
             # Check for sensors: regular device types or CMD sensors
-            if device_type in ["plug", "energy", "thermostat", "unknown"] or device_info.get("is_cmd_sensor", False):
+            if device_type in ["plug", "energy", "thermostat", "elevator", "unknown"] or device_info.get("is_cmd_sensor", False):
                 async_add_sensors(device_key, device_info)
     
     # Listen for coordinator updates
@@ -754,3 +761,116 @@ class EzvilleUnknownSensor(CoordinatorEntity, SensorEntity):
             self._handle_coordinator_update
         )
         log_debug(_LOGGER, "unknown", "Unknown device sensor %s removed from hass", self._attr_name)
+
+
+class EzvilleElevatorCallingSensor(CoordinatorEntity, SensorEntity):
+    """Ezville Wallpad elevator calling sensor."""
+
+    def __init__(
+        self,
+        coordinator: EzvilleWallpadCoordinator,
+        device_key: str,
+        device_info: dict,
+    ) -> None:
+        """Initialize the sensor."""
+        super().__init__(coordinator)
+        self._device_key = device_key
+        self._device_info = device_info
+        self._attr_unique_id = f"{DOMAIN}_{device_key}_calling"
+        self._attr_name = "Elevator Calling"
+        self._attr_icon = "mdi:elevator"
+        
+        # Device info
+        from .device import EzvilleWallpadDevice
+        base_device = EzvilleWallpadDevice(coordinator, device_key, self._attr_unique_id, self._attr_name)
+        self._attr_device_info = base_device.device_info
+        
+        # Initialize state tracking
+        self._last_state = None
+        
+        log_debug(_LOGGER, "elevator", "Initialized elevator calling sensor: %s", self._attr_name)
+
+    @property
+    def native_value(self) -> Optional[str]:
+        """Return the state of the sensor."""
+        device = self.coordinator.devices.get(self._device_key, {})
+        state = device.get("state", {})
+        status = state.get("status", 0)
+        
+        # Determine status based on the value
+        if status == 0:
+            return "off"
+        elif (status << 4) == 0x20:
+            return "on"
+        elif (status << 4) == 0x40:
+            return "cut"
+        else:
+            return str(status)
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return entity specific state attributes."""
+        device = self.coordinator.devices.get(self._device_key, {})
+        state = device.get("state", {})
+        device_info = device.get("device_info", {})
+        
+        # Get the raw packet data if available
+        raw_data = "No data"
+        if "raw_packet" in state:
+            raw_data = state["raw_packet"].hex() if isinstance(state["raw_packet"], bytes) else state["raw_packet"]
+        elif "data" in state:
+            raw_data = state["data"]
+        
+        attributes = {
+            "device_id": state.get("device_id", device_info.get("device_id", "Unknown")),
+            "device_num": state.get("device_num", device_info.get("device_num", "0x00")),
+            "raw_data": raw_data,
+            "floor": state.get("floor", 0)
+        }
+        
+        return attributes
+
+    @property
+    def available(self) -> bool:
+        """Return if entity is available."""
+        return self._device_key in self.coordinator.devices
+
+    def _handle_coordinator_update(self) -> None:
+        """Handle updated data from the coordinator."""
+        # Get current state
+        device = self.coordinator.devices.get(self._device_key, {})
+        current_state = device.get("state", {})
+        
+        # Check if state actually changed
+        if self._last_state == current_state:
+            # No change, skip update
+            return
+        
+        # State changed, update last state
+        self._last_state = current_state.copy()
+        
+        # Schedule update safely from any thread
+        if hasattr(self, 'hass') and self.hass:
+            self.hass.loop.call_soon_threadsafe(self.async_write_ha_state)
+        else:
+            log_debug(_LOGGER, "elevator", "===> Cannot update state for %s - hass not available", self._attr_name)
+
+    async def async_added_to_hass(self) -> None:
+        """When entity is added to hass."""
+        await super().async_added_to_hass()
+        # Register for direct updates
+        self.coordinator.register_entity_callback(
+            self._device_key,
+            self._handle_coordinator_update
+        )
+        log_debug(_LOGGER, "elevator", "Elevator calling sensor %s added to hass", self._attr_name)
+
+    async def async_will_remove_from_hass(self) -> None:
+        """When entity will be removed from hass."""
+        await super().async_will_remove_from_hass()
+        # Unregister callback
+        self.coordinator.unregister_entity_callback(
+            self._device_key,
+            self._handle_coordinator_update
+        )
+        log_debug(_LOGGER, "elevator", "Elevator calling sensor %s removed from hass", self._attr_name)
