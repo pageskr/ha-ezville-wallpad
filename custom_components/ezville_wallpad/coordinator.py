@@ -541,7 +541,7 @@ class EzvilleWallpadCoordinator(DataUpdateCoordinator):
             should_log = base_device_type in log_device_types
             
             if should_log:
-                log_info(_LOGGER, base_device_type, "==> CMD sensor callback: base_type=%s, device_key=%s, state=%s",
+                log_info(_LOGGER, base_device_type, "==> CMD sensor callback: device_type=%s, device_key=%s, state=%s",
                              base_device_type, device_key, state)
             
             # Create device entry for CMD sensor - use base device type for grouping

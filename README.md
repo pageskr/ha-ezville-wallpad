@@ -142,10 +142,12 @@ button.call_elevator   # 엘리베이터 호출
 sensor.elevator_status # 엘리베이터 상태
 
 # 도어벨
-button.ring_doorbell   # 초인종
-button.talk           # 통화  
-button.open_door      # 문열기
-binary_sensor.doorbell # 방문자 감지
+button.doorbell_call   # 호출
+button.doorbell_talk   # 통화  
+button.doorbell_open   # 문열기
+button.doorbell_cancel # 취소
+binary_sensor.doorbell_ringing # 벨소리 울림중
+binary_sensor.doorbell_ring    # 방문자 감지
 
 # 에너지
 sensor.energy_power   # 전력 사용량
@@ -160,7 +162,7 @@ automation:
   - alias: "도어벨 푸시 알림"
     trigger:
       platform: state
-      entity_id: binary_sensor.doorbell
+      entity_id: binary_sensor.doorbell_ring
       to: "on"
     action:
       service: notify.mobile_app_your_phone
@@ -171,6 +173,19 @@ automation:
           actions:
             - action: "OPEN_DOOR"
               title: "문열기"
+            - action: "TALK"
+              title: "통화"
+
+  - alias: "도어벨 문열기 액션"
+    trigger:
+      platform: event
+      event_type: mobile_app_notification_action
+      event_data:
+        action: "OPEN_DOOR"
+    action:
+      service: button.press
+      target:
+        entity_id: button.doorbell_open
 ```
 
 #### 외출 시 모든 조명 끄기 + 가스밸브 차단
@@ -386,6 +401,18 @@ pylint custom_components/
 ![GitHub pull requests](https://img.shields.io/github/issues-pr/pageskr/ha-ezville-wallpad)
 
 ## 🔄 변경 이력
+
+### v1.0.2 (2025-01-21)
+- ✅ 도어벨 버튼 확장 (Call, Talk, Open, Cancel 4개 버튼)
+- ✅ 도어벨 Ring 센서 추가 (방문자 감지)
+- ✅ 도어벨 패킷 자동 감지 기능
+  - 0x10, 0x90: Call 버튼 상태 업데이트
+  - 0x13, 0x93: Ring 센서 ON (방문자 감지)
+  - 0x11, 0x91: Cancel 이벤트 시 Ring 센서 OFF
+  - 0x12, 0x92: Talk 버튼 상태 업데이트
+  - 0x22, 0xA2: Open 버튼 상태 업데이트
+- ✅ 버튼 및 센서에 패킷 정보 속성 추가
+- ✅ 특정 도어벨 명령어 CMD 센서 생성 차단
 
 ### v1.0.1 (2025-08-17)
 - ✅ MQTT QoS 설정 추가

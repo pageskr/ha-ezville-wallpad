@@ -900,6 +900,24 @@ class EzvilleRS485Client:
             log_debug(_LOGGER, device_type, "=> Skipping state request packet (0x01) for %s", device_type)
             return
         
+        # For doorbell, skip specific commands that shouldn't create CMD sensors
+        if device_type == "doorbell" and command in [0x10, 0x90, 0x13, 0x93, 0x12, 0x92, 0x22, 0xA2, 0x11, 0x91]:
+            log_debug(_LOGGER, device_type, "=> Skipping doorbell button/sensor command (0x%02X) - not creating CMD sensor", command)
+            # Still need to notify buttons and sensors about these packets
+            # Create a simple state for button/sensor updates
+            state = {
+                "device_id": f"0x{device_id:02X}",
+                "device_num": f"0x{device_num:02X}",
+                "command": f"0x{command:02X}",
+                "data": packet.hex(),
+                "packet_length": len(packet)
+            }
+            # Broadcast this as a doorbell_cmd update for buttons and sensors to catch
+            device_key = f"doorbell_cmd_{command:02X}"
+            if device_type in self._callbacks:
+                self._callbacks[device_type]("doorbell_cmd", device_key, state)
+            return
+        
         # Create sensor name based on device type
         if device_type in ["light", "plug"]:
             # Extract room number
@@ -1079,8 +1097,7 @@ class EzvilleRS485Client:
         
         elif device_type == "elevator":
             if len(packet) > 6:
-                status_val = packet[6] >> 4
-                state["status"] = status_val
+                state["status"] = packet[6] >> 4
                 state["floor"] = packet[6] & 0x0F
                 # Add device info and raw packet data
                 state["device_id"] = f"0x{packet[1]:02X}"

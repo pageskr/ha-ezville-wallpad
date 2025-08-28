@@ -6,6 +6,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryNotReady
+from homeassistant.helpers.device_registry import DeviceEntry
 
 from .const import (
     DOMAIN,
@@ -385,3 +386,61 @@ async def async_update_options(hass: HomeAssistant, entry: ConfigEntry) -> None:
     if LOGGING_ENABLED:
         _LOGGER.info("Options updated, reloading entry")
     await hass.config_entries.async_reload(entry.entry_id)
+
+
+async def async_remove_config_entry_device(
+    hass: HomeAssistant, config_entry: ConfigEntry, device_entry: DeviceEntry
+) -> bool:
+    """Remove a config entry device."""
+    # Check if this device belongs to our config entry
+    if config_entry.entry_id not in device_entry.config_entries:
+        return False
+    
+    # Get coordinator
+    coordinator = hass.data[DOMAIN].get(config_entry.entry_id)
+    if not coordinator:
+        return True  # If coordinator is gone, allow removal
+    
+    # Extract device identifier from device_entry
+    device_identifier = None
+    for identifier in device_entry.identifiers:
+        if identifier[0] == DOMAIN:
+            device_identifier = identifier[1]
+            break
+    
+    if not device_identifier:
+        return False
+    
+    _LOGGER.info("Removing device: %s", device_identifier)
+    
+    # Remove device from coordinator's devices dict
+    devices_to_remove = []
+    for device_key, device_info in coordinator.devices.items():
+        # Check if this device_key belongs to the device being removed
+        # Device identifiers are like "light_1", "plug_2", "thermostat", etc.
+        if device_key.startswith(device_identifier):
+            devices_to_remove.append(device_key)
+        # Also check for grouped devices (e.g., "light_1_1", "light_1_2" under "light_1")
+        elif "_" in device_identifier and device_key.startswith(device_identifier.split("_")[0]):
+            # Extract room/device group
+            key_parts = device_key.split("_")
+            id_parts = device_identifier.split("_")
+            if len(key_parts) >= 2 and len(id_parts) >= 2:
+                if key_parts[0] == id_parts[0] and key_parts[1] == id_parts[1]:
+                    devices_to_remove.append(device_key)
+    
+    # Remove devices from coordinator
+    for device_key in devices_to_remove:
+        if device_key in coordinator.devices:
+            del coordinator.devices[device_key]
+            _LOGGER.debug("Removed device key: %s", device_key)
+        
+        # Remove from discovered devices
+        if hasattr(coordinator, 'client') and hasattr(coordinator.client, '_discovered_devices'):
+            coordinator.client._discovered_devices.discard(device_key)
+    
+    _LOGGER.info("Device %s and its %d sub-devices removed successfully", 
+                 device_identifier, len(devices_to_remove))
+    
+    # Return True to allow the removal
+    return True

@@ -798,11 +798,11 @@ class EzvilleElevatorCallingSensor(CoordinatorEntity, SensorEntity):
         status = state.get("status", 0)
         
         # Determine status based on the value
-        if status == 0:
+        if status == 0x0:
             return "off"
-        elif (status << 4) == 0x20:
+        elif status == 0x2:
             return "on"
-        elif (status << 4) == 0x40:
+        elif status == 0x4:
             return "cut"
         else:
             return str(status)
