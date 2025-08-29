@@ -1,5 +1,6 @@
 """Sensor platform for Ezville Wallpad."""
 import logging
+from datetime import datetime
 from typing import Any, Optional
 
 from homeassistant.components.sensor import (
@@ -581,7 +582,8 @@ class EzvilleCmdSensor(CoordinatorEntity, SensorEntity):
             self._attr_device_info = base_device.device_info
         
         # Initialize state tracking
-        self._last_state = None
+        self._last_seen = None
+        self._packet_data = {}
         
         # Log with proper device type
         log_debug(_LOGGER, base_device_type, "Initialized CMD sensor: %s (device_type: %s, base_key: %s)", 
@@ -590,23 +592,21 @@ class EzvilleCmdSensor(CoordinatorEntity, SensorEntity):
     @property
     def native_value(self) -> Optional[str]:
         """Return the state of the sensor."""
-        device = self.coordinator.devices.get(self._device_key, {})
-        state = device.get("state", {})
-        # Return the raw data as string
-        return state.get("data", "No data")
+        # Return the last seen time if available
+        if self._last_seen:
+            return self._last_seen
+        return "Never"
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
         """Return entity specific state attributes."""
-        device = self.coordinator.devices.get(self._device_key, {})
-        state = device.get("state", {})
-        
         attributes = {
-            "device_id": state.get("device_id", "Unknown"),
-            "device_num": state.get("device_num", "0x00"),
-            "command": state.get("command", "Unknown"),
-            "raw_data": state.get("raw_data", "No data"),
-            "packet_length": state.get("packet_length", 0)
+            "device_id": self._packet_data.get("device_id", "Unknown"),
+            "device_num": self._packet_data.get("device_num", "0x00"),
+            "command": self._packet_data.get("command", "Unknown"),
+            "raw_data": self._packet_data.get("raw_data", "No data"),
+            "packet_length": self._packet_data.get("packet_length", 0),
+            "full_data": self._packet_data.get("data", "No data")
         }
         
         return attributes
@@ -614,50 +614,50 @@ class EzvilleCmdSensor(CoordinatorEntity, SensorEntity):
     @property
     def available(self) -> bool:
         """Return if entity is available."""
-        return self._device_key in self.coordinator.devices
+        # CMD sensors are always available once created
+        return True
 
     def _handle_coordinator_update(self) -> None:
         """Handle updated data from the coordinator."""
-        # Get current state
-        device = self.coordinator.devices.get(self._device_key, {})
-        current_state = device.get("state", {})
-        
-        # Check if state actually changed - compare only data field for CMD sensors
-        if self._last_state is not None and self._last_state.get("data") == current_state.get("data"):
-            # No change, skip update
+        # Check if device still exists in coordinator (it might have been removed)
+        if self._device_key in self.coordinator.devices:
+            device = self.coordinator.devices.get(self._device_key, {})
+            state = device.get("state", {})
+            
+            # Update our internal state
+            self._last_seen = datetime.now().isoformat()
+            self._packet_data = state
+            
+            # Schedule update
+            if hasattr(self, 'hass') and self.hass:
+                self.hass.loop.call_soon_threadsafe(self.async_write_ha_state)
+                
             base_device_type = self._device_info.get("device_type", "")
-            log_debug(_LOGGER, base_device_type, "CMD sensor state unchanged, skipping update for %s", self._attr_name)
-            return
-        
-        # State changed, update last state
-        self._last_state = current_state.copy()
-        
-        # Schedule update safely from any thread
-        if hasattr(self, 'hass') and self.hass:
-            self.hass.loop.call_soon_threadsafe(self.async_write_ha_state)
-        else:
-            base_device_type = self._device_info.get("device_type", "")
-            log_debug(_LOGGER, base_device_type, "===> Cannot update state for %s - hass not available", self._attr_name)
+            log_info(_LOGGER, base_device_type, "CMD sensor %s received packet at %s", self._attr_name, self._last_seen)
 
     async def async_added_to_hass(self) -> None:
         """When entity is added to hass."""
         await super().async_added_to_hass()
-        # Register for direct updates
+        
+        # Register for coordinator updates
         self.coordinator.register_entity_callback(
             self._device_key,
             self._handle_coordinator_update
         )
+        
         base_device_type = self._device_info.get("device_type", "")
         log_debug(_LOGGER, base_device_type, "CMD sensor %s added to hass", self._attr_name)
 
     async def async_will_remove_from_hass(self) -> None:
         """When entity will be removed from hass."""
         await super().async_will_remove_from_hass()
+        
         # Unregister callback
         self.coordinator.unregister_entity_callback(
             self._device_key,
             self._handle_coordinator_update
         )
+        
         base_device_type = self._device_info.get("device_type", "")
         log_debug(_LOGGER, base_device_type, "CMD sensor %s removed from hass", self._attr_name)
 

@@ -146,8 +146,7 @@ button.doorbell_call   # 호출
 button.doorbell_talk   # 통화  
 button.doorbell_open   # 문열기
 button.doorbell_cancel # 취소
-binary_sensor.doorbell_ringing # 벨소리 울림중
-binary_sensor.doorbell_ring    # 방문자 감지
+binary_sensor.doorbell_ring # 초인종 울림중
 
 # 에너지
 sensor.energy_power   # 전력 사용량
@@ -402,12 +401,12 @@ pylint custom_components/
 
 ## 🔄 변경 이력
 
-### v1.0.2 (2025-01-21)
+### v1.0.2 (2025-08-28)
 - ✅ 도어벨 버튼 확장 (Call, Talk, Open, Cancel 4개 버튼)
-- ✅ 도어벨 Ring 센서 추가 (방문자 감지)
+- ✅ 도어벨 Ring 센서 추가 (초인종 울림)
 - ✅ 도어벨 패킷 자동 감지 기능
   - 0x10, 0x90: Call 버튼 상태 업데이트
-  - 0x13, 0x93: Ring 센서 ON (방문자 감지)
+  - 0x13, 0x93: Ring 초인종 센서 ON
   - 0x11, 0x91: Cancel 이벤트 시 Ring 센서 OFF
   - 0x12, 0x92: Talk 버튼 상태 업데이트
   - 0x22, 0xA2: Open 버튼 상태 업데이트

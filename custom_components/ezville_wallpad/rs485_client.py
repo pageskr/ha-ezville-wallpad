@@ -505,15 +505,15 @@ class EzvilleRS485Client:
         device_type = known_device_type if known_device_type else "unknown"
         
         # Log packet analysis
-        if device_id == 0x0E:  # Light device
+        if device_type == "light":
             room_id = device_num & 0x0F
             log_info(_LOGGER, device_type, "Packet Analysis - Device ID: 0x%02X(Light), Room: 0x%02X(%d), Cmd: 0x%02X, Packet: %s", 
                          device_id, device_num, room_id, command, packet.hex())
-        elif device_id == 0x39:  # Plug device
+        elif device_type == "plug":
             room_id = device_num >> 4
             log_info(_LOGGER, device_type, "Packet Analysis - Device ID: 0x%02X(Plug), Room: 0x%02X(%d), Cmd: 0x%02X, Packet: %s", 
                          device_id, device_num, room_id, command, packet.hex())
-        elif device_id == 0x36:  # Thermostat device
+        elif device_type == "thermostat":
             log_info(_LOGGER, device_type, "Packet Analysis - Device ID: 0x%02X(Thermostat), Num: 0x%02X(%d), Cmd: 0x%02X, Packet: %s", 
                          device_id, device_num, device_num >> 4, command, packet.hex())
         else:
@@ -900,24 +900,6 @@ class EzvilleRS485Client:
             log_debug(_LOGGER, device_type, "=> Skipping state request packet (0x01) for %s", device_type)
             return
         
-        # For doorbell, skip specific commands that shouldn't create CMD sensors
-        if device_type == "doorbell" and command in [0x10, 0x90, 0x13, 0x93, 0x12, 0x92, 0x22, 0xA2, 0x11, 0x91]:
-            log_debug(_LOGGER, device_type, "=> Skipping doorbell button/sensor command (0x%02X) - not creating CMD sensor", command)
-            # Still need to notify buttons and sensors about these packets
-            # Create a simple state for button/sensor updates
-            state = {
-                "device_id": f"0x{device_id:02X}",
-                "device_num": f"0x{device_num:02X}",
-                "command": f"0x{command:02X}",
-                "data": packet.hex(),
-                "packet_length": len(packet)
-            }
-            # Broadcast this as a doorbell_cmd update for buttons and sensors to catch
-            device_key = f"doorbell_cmd_{command:02X}"
-            if device_type in self._callbacks:
-                self._callbacks[device_type]("doorbell_cmd", device_key, state)
-            return
-        
         # Create sensor name based on device type
         if device_type in ["light", "plug"]:
             # Extract room number
@@ -937,22 +919,21 @@ class EzvilleRS485Client:
                 device_name = f"{device_type.title()} Cmd 0x{command:02X}"
             device_key = f"{device_type}_cmd_{command:02X}"
         
-        # Create state data
+        # Create state data for CMD packet
         state = {
             "device_id": f"0x{device_id:02X}",
             "device_num": f"0x{device_num:02X}",
             "command": f"0x{command:02X}",
             "data": packet.hex(),
-            "packet_length": len(packet)
+            "packet_length": len(packet),
+            "device_name": device_name,
+            "base_device_type": device_type,
+            "raw_data": ' '.join([f"{b:02x}" for b in packet[4:-2]]) if len(packet) > 4 else ""
         }
-        
-        # Add raw data for packets with payload
-        if len(packet) > 4:
-            state["raw_data"] = ' '.join([f"{b:02x}" for b in packet[4:-2]])
         
         log_debug(_LOGGER, device_type, "=> CMD packet for %s: %s", device_name, packet.hex())
         
-        # Check if new cmd sensor
+        # Check if new cmd sensor (for discovery)
         if device_key not in self._discovered_devices:
             self._discovered_devices.add(device_key)
             log_info(_LOGGER, device_type, "=> NEW CMD SENSOR discovered: %s", device_key)
@@ -965,30 +946,17 @@ class EzvilleRS485Client:
                 except Exception as err:
                     log_error(_LOGGER, device_type, "Error in discovery callback: %s", err)
         
-        # Check if state has changed - compare the actual packet data
-        old_state = self._device_states.get(device_key, {})
-        state_changed = old_state.get("data") != state.get("data")
-        
-        if state_changed:
-            # Update state
-            self._device_states[device_key] = state
-            
-            # Call callback if registered
-            callback_type = f"{device_type}_cmd"
-            if callback_type in self._callbacks:
-                log_debug(_LOGGER, device_type, "=> Calling callback for %s with key=%s, state=%s", 
-                             callback_type, device_key, state)
-                self._callbacks[callback_type](callback_type, device_key, state)
-                log_debug(_LOGGER, device_type, "=> Callback completed for %s", device_key)
-            else:
-                # Try to use the device type callback
-                if device_type in self._callbacks:
-                    log_debug(_LOGGER, device_type, "=> Calling device callback for cmd sensor %s with key=%s, state=%s", 
-                                 device_type, device_key, state)
-                    self._callbacks[device_type](callback_type, device_key, state)
-                    log_debug(_LOGGER, device_type, "=> Device callback completed for cmd sensor %s", device_key)
+        # For all CMD sensors, notify via callback without storing permanently
+        # This prevents continuous updates from coordinator
+        callback_type = f"{device_type}_cmd"
+        if callback_type in self._callbacks:
+            log_debug(_LOGGER, device_type, "=> Notifying CMD sensor %s", device_key)
+            self._callbacks[callback_type](callback_type, device_key, state)
         else:
-            log_debug(_LOGGER, device_type, "=> CMD sensor %s state unchanged, skipping callback", device_key)
+            # Try to use the device type callback
+            if device_type in self._callbacks:
+                log_debug(_LOGGER, device_type, "=> Notifying via device callback for CMD sensor %s", device_key)
+                self._callbacks[device_type](callback_type, device_key, state)
     
     def _handle_unknown_device(self, packet: bytes):
         """Handle unknown devices and create entries for them."""
@@ -1107,15 +1075,13 @@ class EzvilleRS485Client:
         
         elif device_type == "doorbell":
             if len(packet) > 4:
-                # Check both ring state and ringing state
-                ring_state = packet[4] == 0x01
-                ringing_state = False
+                state["ring"] = packet[4] == 0x01
+                state["ringing"] = False
                 if len(packet) > 5:
-                    ringing_state = packet[5] == 0x01
-                
-                state["ring"] = ring_state
-                state["ringing"] = ring_state or ringing_state  # For binary sensor
-                log_debug(_LOGGER, device_type, "Doorbell state parsed: ring=%s, ringing=%s", ring_state, ringing_state)
+                    state["ringing"] = packet[5] == 0x01
+                # Check both ring state and ringing state
+                state["ringing"] = state["ring"] or state["ringing"]
+                log_debug(_LOGGER, device_type, "Doorbell state parsed: %s", state)
         
         # Note: light, plug, thermostat are handled in _process_packet directly
         

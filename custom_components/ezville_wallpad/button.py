@@ -3,7 +3,7 @@ import logging
 from typing import Any
 from datetime import datetime
 
-from homeassistant.components.button import ButtonEntity
+from homeassistant.components.button import ButtonEntity, ENTITY_ID_FORMAT
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
@@ -109,7 +109,93 @@ class EzvilleElevatorCallButton(CoordinatorEntity, ButtonEntity):
         _LOGGER.info("Elevator call button pressed")
 
 
-class EzvilleDoorbellCallButton(CoordinatorEntity, ButtonEntity):
+class EzvilleDoorbellButtonBase(CoordinatorEntity, ButtonEntity):
+    """Base class for Ezville doorbell buttons."""
+
+    def __init__(
+        self,
+        coordinator: EzvilleWallpadCoordinator,
+        device_key: str,
+        device_info: dict,
+        button_type: str,
+        button_name: str,
+    ) -> None:
+        """Initialize the button."""
+        super().__init__(coordinator)
+        self._device_key = device_key
+        self._device_info = device_info
+        self._button_type = button_type
+        self._attr_unique_id = f"{DOMAIN}_{device_key}_{button_type}"
+        self._attr_name = f"{device_info.get('name', 'Doorbell')} {button_name}"
+        self._last_pressed = None
+        self._packet_info = {}
+        self._listen_commands = []
+        
+        # Device info
+        self._attr_device_info = {
+            "identifiers": {(DOMAIN, device_key)},
+            "name": device_info.get("name", "Doorbell"),
+            "manufacturer": MANUFACTURER,
+            "model": MODEL,
+        }
+
+    @property
+    def extra_state_attributes(self):
+        """Return extra state attributes."""
+        attrs = {}
+        if self._last_pressed:
+            attrs["last_pressed"] = self._last_pressed
+        if self._packet_info:
+            attrs.update(self._packet_info)
+        return attrs
+
+    def _handle_packet_received(self, command: int, packet_data: dict) -> None:
+        """Handle when a relevant packet is received."""
+        if command in self._listen_commands:
+            self._last_pressed = datetime.now().isoformat()
+            self._packet_info = {
+                "device_id": packet_data.get("device_id", ""),
+                "device_num": packet_data.get("device_num", ""),
+                "command": packet_data.get("command", ""),
+                "raw_data": packet_data.get("data", "")
+            }
+            # Force update state to reflect the button press time
+            self.async_write_ha_state()
+            _LOGGER.info("Doorbell %s button event detected from command 0x%02X", self._button_type, command)
+
+    def _handle_coordinator_update(self) -> None:
+        """Handle updated data from the coordinator."""
+        # Check for doorbell CMD updates
+        for device_key in list(self.coordinator.devices.keys()):
+            if device_key.startswith("doorbell_cmd_"):
+                device_data = self.coordinator.devices.get(device_key, {})
+                state = device_data.get("state", {})
+                command_str = state.get("command", "").lower().replace("0x", "")
+                try:
+                    command = int(command_str, 16)
+                    if command in self._listen_commands:
+                        self._handle_packet_received(command, state)
+                except ValueError:
+                    pass
+        
+        super()._handle_coordinator_update()
+
+    async def async_added_to_hass(self) -> None:
+        """When entity is added to hass."""
+        await super().async_added_to_hass()
+        
+        # No need to register individual callbacks - coordinator update will catch CMD events
+
+    async def async_will_remove_from_hass(self) -> None:
+        """When entity will be removed from hass."""
+        await super().async_will_remove_from_hass()
+        # Unregister callbacks
+        for cmd in self._listen_commands:
+            temp_key = f"doorbell_cmd_{cmd:02X}_temp"
+            # Note: We can't easily unregister specific callbacks, but they'll be cleaned up when coordinator is destroyed
+
+
+class EzvilleDoorbellCallButton(EzvilleDoorbellButtonBase):
     """Ezville Wallpad doorbell call button."""
 
     def __init__(
@@ -119,48 +205,9 @@ class EzvilleDoorbellCallButton(CoordinatorEntity, ButtonEntity):
         device_info: dict,
     ) -> None:
         """Initialize the button."""
-        super().__init__(coordinator)
-        self._device_key = device_key
-        self._device_info = device_info
-        self._attr_unique_id = f"{DOMAIN}_{device_key}_call"
-        self._attr_name = f"{device_info.get('name', 'Doorbell')} Call"
-        self._last_packet_info = None
-        self._attr_extra_state_attributes = {}
-        
-        # Device info
-        self._attr_device_info = {
-            "identifiers": {(DOMAIN, device_key)},
-            "name": device_info.get("name", "Doorbell"),
-            "manufacturer": MANUFACTURER,
-            "model": MODEL,
-        }
-        
-        # Register packet listener for this button
-        self._register_packet_listener()
-
-    def _register_packet_listener(self) -> None:
-        """Register to listen for specific packets."""
+        super().__init__(coordinator, device_key, device_info, "call", "Call")
         # Commands to listen for: 0x10, 0x90
         self._listen_commands = [0x10, 0x90]
-        
-    @callback
-    def _handle_packet_update(self, packet_data: dict) -> None:
-        """Handle packet updates for this button."""
-        command = packet_data.get("command", "").lower().replace("0x", "")
-        try:
-            cmd_int = int(command, 16)
-            if cmd_int in self._listen_commands:
-                self._last_packet_info = packet_data
-                self._attr_extra_state_attributes = {
-                    "last_pressed": datetime.now().isoformat(),
-                    "device_id": packet_data.get("device_id", ""),
-                    "device_num": packet_data.get("device_num", ""),
-                    "command": packet_data.get("command", ""),
-                    "raw_data": packet_data.get("data", "")
-                }
-                self.async_write_ha_state()
-        except ValueError:
-            pass
 
     async def async_press(self) -> None:
         """Handle the button press."""
@@ -170,20 +217,13 @@ class EzvilleDoorbellCallButton(CoordinatorEntity, ButtonEntity):
             "call",
             True
         )
+        # Update button press time
+        self._last_pressed = datetime.now().isoformat()
+        self.async_write_ha_state()
         _LOGGER.info("Doorbell call button pressed")
 
-    def _handle_coordinator_update(self) -> None:
-        """Handle updated data from the coordinator."""
-        # Check for CMD sensor updates
-        for device_key, device_data in self.coordinator.devices.items():
-            if device_data.get("is_cmd_sensor", False) and "doorbell_cmd_" in device_key:
-                state = device_data.get("state", {})
-                self._handle_packet_update(state)
-        
-        super()._handle_coordinator_update()
 
-
-class EzvilleDoorbellTalkButton(CoordinatorEntity, ButtonEntity):
+class EzvilleDoorbellTalkButton(EzvilleDoorbellButtonBase):
     """Ezville Wallpad doorbell talk button."""
 
     def __init__(
@@ -193,48 +233,9 @@ class EzvilleDoorbellTalkButton(CoordinatorEntity, ButtonEntity):
         device_info: dict,
     ) -> None:
         """Initialize the button."""
-        super().__init__(coordinator)
-        self._device_key = device_key
-        self._device_info = device_info
-        self._attr_unique_id = f"{DOMAIN}_{device_key}_talk"
-        self._attr_name = f"{device_info.get('name', 'Doorbell')} Talk"
-        self._last_packet_info = None
-        self._attr_extra_state_attributes = {}
-        
-        # Device info
-        self._attr_device_info = {
-            "identifiers": {(DOMAIN, device_key)},
-            "name": device_info.get("name", "Doorbell"),
-            "manufacturer": MANUFACTURER,
-            "model": MODEL,
-        }
-        
-        # Register packet listener for this button
-        self._register_packet_listener()
-
-    def _register_packet_listener(self) -> None:
-        """Register to listen for specific packets."""
+        super().__init__(coordinator, device_key, device_info, "talk", "Talk")
         # Commands to listen for: 0x12, 0x92
         self._listen_commands = [0x12, 0x92]
-        
-    @callback
-    def _handle_packet_update(self, packet_data: dict) -> None:
-        """Handle packet updates for this button."""
-        command = packet_data.get("command", "").lower().replace("0x", "")
-        try:
-            cmd_int = int(command, 16)
-            if cmd_int in self._listen_commands:
-                self._last_packet_info = packet_data
-                self._attr_extra_state_attributes = {
-                    "last_pressed": datetime.now().isoformat(),
-                    "device_id": packet_data.get("device_id", ""),
-                    "device_num": packet_data.get("device_num", ""),
-                    "command": packet_data.get("command", ""),
-                    "raw_data": packet_data.get("data", "")
-                }
-                self.async_write_ha_state()
-        except ValueError:
-            pass
 
     async def async_press(self) -> None:
         """Handle the button press."""
@@ -244,20 +245,13 @@ class EzvilleDoorbellTalkButton(CoordinatorEntity, ButtonEntity):
             "talk",
             True
         )
+        # Update button press time
+        self._last_pressed = datetime.now().isoformat()
+        self.async_write_ha_state()
         _LOGGER.info("Doorbell talk button pressed")
 
-    def _handle_coordinator_update(self) -> None:
-        """Handle updated data from the coordinator."""
-        # Check for CMD sensor updates
-        for device_key, device_data in self.coordinator.devices.items():
-            if device_data.get("is_cmd_sensor", False) and "doorbell_cmd_" in device_key:
-                state = device_data.get("state", {})
-                self._handle_packet_update(state)
-        
-        super()._handle_coordinator_update()
 
-
-class EzvilleDoorbellOpenButton(CoordinatorEntity, ButtonEntity):
+class EzvilleDoorbellOpenButton(EzvilleDoorbellButtonBase):
     """Ezville Wallpad doorbell open button."""
 
     def __init__(
@@ -267,48 +261,9 @@ class EzvilleDoorbellOpenButton(CoordinatorEntity, ButtonEntity):
         device_info: dict,
     ) -> None:
         """Initialize the button."""
-        super().__init__(coordinator)
-        self._device_key = device_key
-        self._device_info = device_info
-        self._attr_unique_id = f"{DOMAIN}_{device_key}_open"
-        self._attr_name = f"{device_info.get('name', 'Doorbell')} Open"
-        self._last_packet_info = None
-        self._attr_extra_state_attributes = {}
-        
-        # Device info
-        self._attr_device_info = {
-            "identifiers": {(DOMAIN, device_key)},
-            "name": device_info.get("name", "Doorbell"),
-            "manufacturer": MANUFACTURER,
-            "model": MODEL,
-        }
-        
-        # Register packet listener for this button
-        self._register_packet_listener()
-
-    def _register_packet_listener(self) -> None:
-        """Register to listen for specific packets."""
+        super().__init__(coordinator, device_key, device_info, "open", "Open")
         # Commands to listen for: 0x22, 0xA2
         self._listen_commands = [0x22, 0xA2]
-        
-    @callback
-    def _handle_packet_update(self, packet_data: dict) -> None:
-        """Handle packet updates for this button."""
-        command = packet_data.get("command", "").lower().replace("0x", "")
-        try:
-            cmd_int = int(command, 16)
-            if cmd_int in self._listen_commands:
-                self._last_packet_info = packet_data
-                self._attr_extra_state_attributes = {
-                    "last_pressed": datetime.now().isoformat(),
-                    "device_id": packet_data.get("device_id", ""),
-                    "device_num": packet_data.get("device_num", ""),
-                    "command": packet_data.get("command", ""),
-                    "raw_data": packet_data.get("data", "")
-                }
-                self.async_write_ha_state()
-        except ValueError:
-            pass
 
     async def async_press(self) -> None:
         """Handle the button press."""
@@ -318,20 +273,13 @@ class EzvilleDoorbellOpenButton(CoordinatorEntity, ButtonEntity):
             "open",
             True
         )
+        # Update button press time
+        self._last_pressed = datetime.now().isoformat()
+        self.async_write_ha_state()
         _LOGGER.info("Doorbell open button pressed")
 
-    def _handle_coordinator_update(self) -> None:
-        """Handle updated data from the coordinator."""
-        # Check for CMD sensor updates
-        for device_key, device_data in self.coordinator.devices.items():
-            if device_data.get("is_cmd_sensor", False) and "doorbell_cmd_" in device_key:
-                state = device_data.get("state", {})
-                self._handle_packet_update(state)
-        
-        super()._handle_coordinator_update()
 
-
-class EzvilleDoorbellCancelButton(CoordinatorEntity, ButtonEntity):
+class EzvilleDoorbellCancelButton(EzvilleDoorbellButtonBase):
     """Ezville Wallpad doorbell cancel button."""
 
     def __init__(
@@ -341,48 +289,9 @@ class EzvilleDoorbellCancelButton(CoordinatorEntity, ButtonEntity):
         device_info: dict,
     ) -> None:
         """Initialize the button."""
-        super().__init__(coordinator)
-        self._device_key = device_key
-        self._device_info = device_info
-        self._attr_unique_id = f"{DOMAIN}_{device_key}_cancel"
-        self._attr_name = f"{device_info.get('name', 'Doorbell')} Cancel"
-        self._last_packet_info = None
-        self._attr_extra_state_attributes = {}
-        
-        # Device info
-        self._attr_device_info = {
-            "identifiers": {(DOMAIN, device_key)},
-            "name": device_info.get("name", "Doorbell"),
-            "manufacturer": MANUFACTURER,
-            "model": MODEL,
-        }
-        
-        # Register packet listener for this button
-        self._register_packet_listener()
-
-    def _register_packet_listener(self) -> None:
-        """Register to listen for specific packets."""
+        super().__init__(coordinator, device_key, device_info, "cancel", "Cancel")
         # Commands to listen for: 0x11, 0x91
         self._listen_commands = [0x11, 0x91]
-        
-    @callback
-    def _handle_packet_update(self, packet_data: dict) -> None:
-        """Handle packet updates for this button."""
-        command = packet_data.get("command", "").lower().replace("0x", "")
-        try:
-            cmd_int = int(command, 16)
-            if cmd_int in self._listen_commands:
-                self._last_packet_info = packet_data
-                self._attr_extra_state_attributes = {
-                    "last_pressed": datetime.now().isoformat(),
-                    "device_id": packet_data.get("device_id", ""),
-                    "device_num": packet_data.get("device_num", ""),
-                    "command": packet_data.get("command", ""),
-                    "raw_data": packet_data.get("data", "")
-                }
-                self.async_write_ha_state()
-        except ValueError:
-            pass
 
     async def async_press(self) -> None:
         """Handle the button press."""
@@ -392,14 +301,7 @@ class EzvilleDoorbellCancelButton(CoordinatorEntity, ButtonEntity):
             "cancel",
             True
         )
+        # Update button press time
+        self._last_pressed = datetime.now().isoformat()
+        self.async_write_ha_state()
         _LOGGER.info("Doorbell cancel button pressed")
-
-    def _handle_coordinator_update(self) -> None:
-        """Handle updated data from the coordinator."""
-        # Check for CMD sensor updates
-        for device_key, device_data in self.coordinator.devices.items():
-            if device_data.get("is_cmd_sensor", False) and "doorbell_cmd_" in device_key:
-                state = device_data.get("state", {})
-                self._handle_packet_update(state)
-        
-        super()._handle_coordinator_update()

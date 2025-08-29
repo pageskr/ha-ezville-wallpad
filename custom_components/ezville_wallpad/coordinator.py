@@ -151,14 +151,14 @@ class EzvilleWallpadCoordinator(DataUpdateCoordinator):
         # Register device callbacks only for enabled capabilities
         for device_type in self.capabilities:
             self.client.register_callback(device_type, self._device_update_callback)
-            log_debug(_LOGGER, device_type, "Registered callback for device type: %s", device_type)
+            _LOGGER.debug("Registered callback for device type: %s", device_type)
         
         # Always register callback for unknown devices
         self.client.register_callback("unknown", self._device_update_callback)
-        log_debug(_LOGGER, "unknown", "Registered callback for unknown devices")
+        _LOGGER.debug("Registered callback for unknown devices")
         
         # Unknown devices will be created dynamically when discovered
-        log_info(_LOGGER, "unknown", "Unknown devices will be created dynamically when discovered")
+        _LOGGER.info("Unknown devices will be created dynamically when discovered")
 
     def _initialize_default_devices(self):
         """Initialize default devices for enabled capabilities."""
@@ -525,6 +525,62 @@ class EzvilleWallpadCoordinator(DataUpdateCoordinator):
     @callback
     def _device_update_callback(self, device_type: str, device_id: Any, state: Dict[str, Any]):
         """Handle device state updates."""
+        # Handle special CMD updates - device_key contains _cmd
+        if "_cmd" in device_type:
+            # This is a CMD event - handle specially
+            base_device_type = device_type.replace("_cmd", "")
+            device_key = device_id  # For CMD sensors, device_id is the device_key
+            
+            # Check if device_key contains _cmd (it should)
+            if device_key and "_cmd_" in device_key:
+                # Temporarily store in devices for entity creation/update
+                if device_key not in self.devices:
+                    # Create device entry for discovery
+                    self.devices[device_key] = {
+                        "device_type": base_device_type,
+                        "is_cmd_sensor": True,
+                        "device_id": device_id,
+                        "name": self._get_cmd_sensor_name(base_device_type, device_key),
+                        "state": state
+                    }
+                    log_info(_LOGGER, base_device_type, "Created CMD sensor device: %s", device_key)
+                else:
+                    # Update existing device state
+                    self.devices[device_key]["state"] = state
+                
+                # Notify entities via callbacks
+                if device_key in self._entity_callbacks:
+                    for callback in self._entity_callbacks[device_key]:
+                        try:
+                            callback()
+                        except Exception as err:
+                            log_error(_LOGGER, base_device_type, "Error in CMD event callback: %s", err)
+                
+                # Trigger coordinator update for entity discovery
+                if threading.current_thread() is threading.main_thread():
+                    self.async_set_updated_data(self.devices)
+                else:
+                    self.hass.loop.call_soon_threadsafe(
+                        lambda: self.async_set_updated_data(self.devices)
+                    )
+                
+                # Schedule removal of CMD device from coordinator.devices after a short delay
+                # This allows entities to be created but prevents continuous updates
+                async def _remove_cmd_device():
+                    await asyncio.sleep(0.5)  # Give entities time to process
+                    if device_key in self.devices and self.devices[device_key].get("is_cmd_sensor"):
+                        del self.devices[device_key]
+                        log_debug(_LOGGER, base_device_type, "Removed CMD sensor %s from devices", device_key)
+                
+                # Schedule the removal task
+                if threading.current_thread() is threading.main_thread():
+                    self.hass.async_create_task(_remove_cmd_device())
+                else:
+                    self.hass.loop.call_soon_threadsafe(
+                        lambda: self.hass.async_create_task(_remove_cmd_device())
+                    )
+                
+                return
         # Always log unknown devices
         if device_type == "unknown":
             log_info(_LOGGER, device_type, "==> Unknown device callback: device_type=%s, device_id=%s, state=%s",

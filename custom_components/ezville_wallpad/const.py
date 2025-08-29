@@ -165,10 +165,10 @@ RS485_DEVICE = {
         "call": {"id": 0x33, "cmd": 0x43, "ack": 0xC3},
     },
     "doorbell": {
-        "state": {"id": 0x40, "cmd": 0x82},
+        "state": {"id": 0x40, "cmd": 0x81},
         "last": {},
-        "ring": {"id": 0x40, "cmd": 0x93, "ack": 0xC3},  # For ring sensor
-        "call": {"id": 0x40, "cmd": 0x10, "ack": 0xC0},  # For doorbell call button
+        "call": {"id": 0x40, "cmd": 0x10, "ack": 0xC0},
+        "ring": {"id": 0x40, "cmd": 0x13, "ack": 0xC3},
         "talk": {"id": 0x40, "cmd": 0x12, "ack": 0xC2},
         "open": {"id": 0x40, "cmd": 0x22, "ack": 0xC2},
         "cancel": {"id": 0x40, "cmd": 0x11, "ack": 0xC1},
