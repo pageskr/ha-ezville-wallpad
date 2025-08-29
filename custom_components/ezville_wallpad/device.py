@@ -43,6 +43,17 @@ class EzvilleWallpadDevice(CoordinatorEntity):
         device_type = self._device_key.split("_")[0]
         parts = self._device_key.split("_")
         
+        # Check if this is a CMD sensor by looking for is_cmd_sensor in device_info
+        is_cmd_sensor = False
+        if hasattr(self, 'coordinator') and self._device_key in self.coordinator.devices:
+            device_data = self.coordinator.devices.get(self._device_key, {})
+            is_cmd_sensor = device_data.get("is_cmd_sensor", False)
+            
+        # If CMD sensor, extract the base device type from device_key
+        if is_cmd_sensor and "_cmd_" in self._device_key:
+            # For doorbell_cmd_XX, extract doorbell as device_type
+            device_type = parts[0]
+        
         # 기기별 이름 생성 및 식별자 로직
         if device_type == "light":
             # light_1_2 -> Light 1 기기로 그룹핑
@@ -60,19 +71,19 @@ class EzvilleWallpadDevice(CoordinatorEntity):
             device_identifier = device_type
         elif device_type == "gas":
             device_name = "Gas"
-            device_identifier = self._device_key
+            device_identifier = device_type  # Changed from self._device_key
         elif device_type == "fan":
             device_name = "Ventilation"
-            device_identifier = self._device_key
+            device_identifier = device_type  # Changed from self._device_key
         elif device_type == "energy":
             device_name = "Energy"
-            device_identifier = self._device_key
+            device_identifier = device_type  # Changed from self._device_key
         elif device_type == "elevator":
             device_name = "Elevator"
-            device_identifier = self._device_key
+            device_identifier = device_type  # Changed from self._device_key
         elif device_type == "doorbell":
             device_name = "Doorbell"
-            device_identifier = self._device_key
+            device_identifier = device_type  # Changed from self._device_key to device_type
         elif device_type == "unknown":
             # All unknown devices group under single Unknown device
             device_name = "Unknown"
