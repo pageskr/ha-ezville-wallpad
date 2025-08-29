@@ -1,7 +1,7 @@
 """Button platform for Ezville Wallpad."""
 import logging
 from typing import Any
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from homeassistant.components.button import ButtonEntity, ENTITY_ID_FORMAT
 from homeassistant.config_entries import ConfigEntry
@@ -152,6 +152,23 @@ class EzvilleDoorbellButtonBase(CoordinatorEntity, ButtonEntity):
     def _handle_packet_received(self, command: int, packet_data: dict) -> None:
         """Handle when a relevant packet is received."""
         if command in self._listen_commands:
+            # Check if update is recent (within 1 second)
+            last_seen = packet_data.get("last_seen")
+            if last_seen:
+                try:
+                    last_seen_time = datetime.fromisoformat(last_seen)
+                    current_time = datetime.now()
+                    time_diff = current_time - last_seen_time
+                    
+                    # Only update if within 1 second
+                    if time_diff > timedelta(seconds=1):
+                        _LOGGER.debug("Doorbell %s button skipped old update (%.1f seconds old)", 
+                                    self._button_type, time_diff.total_seconds())
+                        return
+                except Exception as e:
+                    _LOGGER.error("Error processing last_seen time for doorbell button: %s", e)
+                    return
+            
             self._last_pressed = datetime.now().isoformat()
             self._packet_info = {
                 "device_id": packet_data.get("device_id", ""),

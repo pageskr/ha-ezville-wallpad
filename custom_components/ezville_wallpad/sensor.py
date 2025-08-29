@@ -1,6 +1,6 @@
 """Sensor platform for Ezville Wallpad."""
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any, Optional
 
 from homeassistant.components.sensor import (
@@ -592,10 +592,10 @@ class EzvilleCmdSensor(CoordinatorEntity, SensorEntity):
     @property
     def native_value(self) -> Optional[str]:
         """Return the state of the sensor."""
-        # Return the last seen time if available
-        if self._last_seen:
-            return self._last_seen
-        return "Never"
+        # Return the packet data
+        if self._packet_data:
+            return self._packet_data.get("data", "No data")
+        return "No data"
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
@@ -606,7 +606,8 @@ class EzvilleCmdSensor(CoordinatorEntity, SensorEntity):
             "command": self._packet_data.get("command", "Unknown"),
             "raw_data": self._packet_data.get("raw_data", "No data"),
             "packet_length": self._packet_data.get("packet_length", 0),
-            "full_data": self._packet_data.get("data", "No data")
+            "full_data": self._packet_data.get("data", "No data"),
+            "last_seen": self._last_seen
         }
         
         return attributes
@@ -619,21 +620,51 @@ class EzvilleCmdSensor(CoordinatorEntity, SensorEntity):
 
     def _handle_coordinator_update(self) -> None:
         """Handle updated data from the coordinator."""
-        # Check if device still exists in coordinator (it might have been removed)
+        # Check if device still exists in coordinator
         if self._device_key in self.coordinator.devices:
             device = self.coordinator.devices.get(self._device_key, {})
             state = device.get("state", {})
             
-            # Update our internal state
-            self._last_seen = datetime.now().isoformat()
-            self._packet_data = state
-            
-            # Schedule update
-            if hasattr(self, 'hass') and self.hass:
-                self.hass.loop.call_soon_threadsafe(self.async_write_ha_state)
+            # Get last_seen from state
+            state_last_seen = state.get("last_seen")
+            if state_last_seen:
+                # Check if the update is within 1 second
+                from datetime import datetime, timedelta
+                try:
+                    last_seen_time = datetime.fromisoformat(state_last_seen)
+                    current_time = datetime.now()
+                    time_diff = current_time - last_seen_time
+                    
+                    # Only update if within 1 second
+                    if time_diff <= timedelta(seconds=1):
+                        # Update our internal state
+                        self._last_seen = state_last_seen
+                        self._packet_data = state
+                        
+                        # Schedule update
+                        if hasattr(self, 'hass') and self.hass:
+                            self.hass.loop.call_soon_threadsafe(self.async_write_ha_state)
+                            
+                        base_device_type = self._device_info.get("device_type", "")
+                        log_info(_LOGGER, base_device_type, "CMD sensor %s received packet at %s", self._attr_name, self._last_seen)
+                    else:
+                        base_device_type = self._device_info.get("device_type", "")
+                        log_debug(_LOGGER, base_device_type, "CMD sensor %s skipped old update (%.1f seconds old)", 
+                                 self._attr_name, time_diff.total_seconds())
+                except Exception as e:
+                    base_device_type = self._device_info.get("device_type", "")
+                    log_error(_LOGGER, base_device_type, "Error processing last_seen time: %s", e)
+            else:
+                # No last_seen in state, update anyway (for compatibility)
+                self._last_seen = datetime.now().isoformat()
+                self._packet_data = state
                 
-            base_device_type = self._device_info.get("device_type", "")
-            log_info(_LOGGER, base_device_type, "CMD sensor %s received packet at %s", self._attr_name, self._last_seen)
+                # Schedule update
+                if hasattr(self, 'hass') and self.hass:
+                    self.hass.loop.call_soon_threadsafe(self.async_write_ha_state)
+                    
+                base_device_type = self._device_info.get("device_type", "")
+                log_info(_LOGGER, base_device_type, "CMD sensor %s received packet (no last_seen)", self._attr_name)
 
     async def async_added_to_hass(self) -> None:
         """When entity is added to hass."""

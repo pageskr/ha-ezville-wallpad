@@ -819,24 +819,4 @@ class EzvilleWallpadCoordinator(DataUpdateCoordinator):
         parts = device_key.split("_")
         
         if base_device_type in ["light", "plug"]:
-            # Format: light_1_cmd_41 or plug_1_cmd_41
-            if len(parts) >= 4 and parts[2] == "cmd":
-                room_id = parts[1]
-                cmd = parts[3].upper()
-                return f"{base_device_type.title()} {room_id} Cmd 0x{cmd}"
-        else:
-            # Format: doorbell_cmd_41, elevator_cmd_41, thermostat_cmd_41 etc.
-            if len(parts) >= 3 and parts[1] == "cmd":
-                cmd = parts[2].upper()
-                if base_device_type == "fan":
-                    # Fan should display as Ventilation
-                    return f"Ventilation Cmd 0x{cmd}"
-                else:
-                    return f"{base_device_type.title()} Cmd 0x{cmd}"
-        
-        # Fallback
-        return device_key.replace("_", " ").title()
-    
-    def get_platforms_to_load(self) -> set:
-        """Get platforms that need to be loaded."""
-        return self._platforms_to_load
+            # Format: light
