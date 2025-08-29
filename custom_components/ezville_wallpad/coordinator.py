@@ -2,7 +2,7 @@
 import logging
 import asyncio
 import threading
-from datetime import timedelta
+from datetime import timedelta, datetime
 from typing import Any, Dict, Optional, Callable
 from logging.handlers import TimedRotatingFileHandler
 
@@ -533,7 +533,10 @@ class EzvilleWallpadCoordinator(DataUpdateCoordinator):
             
             # Check if device_key contains _cmd (it should)
             if device_key and "_cmd_" in device_key:
-                # Temporarily store in devices for entity creation/update
+                # Add last_seen timestamp to state
+                state["last_seen"] = datetime.now().isoformat()
+                
+                # Store/update in devices for entity creation/update
                 if device_key not in self.devices:
                     # Create device entry for discovery
                     self.devices[device_key] = {
@@ -564,21 +567,8 @@ class EzvilleWallpadCoordinator(DataUpdateCoordinator):
                         lambda: self.async_set_updated_data(self.devices)
                     )
                 
-                # Schedule removal of CMD device from coordinator.devices after a short delay
-                # This allows entities to be created but prevents continuous updates
-                async def _remove_cmd_device():
-                    await asyncio.sleep(0.5)  # Give entities time to process
-                    if device_key in self.devices and self.devices[device_key].get("is_cmd_sensor"):
-                        del self.devices[device_key]
-                        log_debug(_LOGGER, base_device_type, "Removed CMD sensor %s from devices", device_key)
-                
-                # Schedule the removal task
-                if threading.current_thread() is threading.main_thread():
-                    self.hass.async_create_task(_remove_cmd_device())
-                else:
-                    self.hass.loop.call_soon_threadsafe(
-                        lambda: self.hass.async_create_task(_remove_cmd_device())
-                    )
+                # Don't remove CMD devices from coordinator.devices
+                # They will be kept for proper device grouping and entity management
                 
                 return
         # Always log unknown devices
@@ -599,6 +589,9 @@ class EzvilleWallpadCoordinator(DataUpdateCoordinator):
             if should_log:
                 log_info(_LOGGER, base_device_type, "==> CMD sensor callback: device_type=%s, device_key=%s, state=%s",
                              base_device_type, device_key, state)
+            
+            # Add last_seen timestamp to state
+            state["last_seen"] = datetime.now().isoformat()
             
             # Create device entry for CMD sensor - use base device type for grouping
             if device_key not in self.devices:
@@ -646,24 +639,18 @@ class EzvilleWallpadCoordinator(DataUpdateCoordinator):
                         )
                     )
             else:
-                # Update existing device - check if state changed
-                old_state = self.devices[device_key].get("state", {})
-                # Compare only the data field for CMD sensors
-                if old_state.get("data") != state.get("data"):
-                    self.devices[device_key]["state"] = state
-                    if should_log:
-                        log_debug(_LOGGER, base_device_type, "Updated CMD sensor state: %s", device_key)
-                    
-                    # Trigger coordinator update only if state changed
-                    if threading.current_thread() is threading.main_thread():
-                        self.async_set_updated_data(self.devices)
-                    else:
-                        self.hass.loop.call_soon_threadsafe(
-                            lambda: self.async_set_updated_data(self.devices)
-                        )
+                # Update existing device with new state (including last_seen)
+                self.devices[device_key]["state"] = state
+                if should_log:
+                    log_debug(_LOGGER, base_device_type, "Updated CMD sensor state: %s", device_key)
+                
+                # Trigger coordinator update
+                if threading.current_thread() is threading.main_thread():
+                    self.async_set_updated_data(self.devices)
                 else:
-                    if should_log:
-                        log_debug(_LOGGER, base_device_type, "CMD sensor state unchanged: %s", device_key)
+                    self.hass.loop.call_soon_threadsafe(
+                        lambda: self.async_set_updated_data(self.devices)
+                    )
             
             return
         
@@ -819,4 +806,24 @@ class EzvilleWallpadCoordinator(DataUpdateCoordinator):
         parts = device_key.split("_")
         
         if base_device_type in ["light", "plug"]:
-            # Format: light
+            # Format: light_1_cmd_41 or plug_1_cmd_41
+            if len(parts) >= 4 and parts[2] == "cmd":
+                room_id = parts[1]
+                cmd = parts[3].upper()
+                return f"{base_device_type.title()} {room_id} Cmd 0x{cmd}"
+        else:
+            # Format: doorbell_cmd_41, elevator_cmd_41, thermostat_cmd_41 etc.
+            if len(parts) >= 3 and parts[1] == "cmd":
+                cmd = parts[2].upper()
+                if base_device_type == "fan":
+                    # Fan should display as Ventilation
+                    return f"Ventilation Cmd 0x{cmd}"
+                else:
+                    return f"{base_device_type.title()} Cmd 0x{cmd}"
+        
+        # Fallback
+        return device_key.replace("_", " ").title()
+    
+    def get_platforms_to_load(self) -> set:
+        """Get platforms that need to be loaded."""
+        return self._platforms_to_load

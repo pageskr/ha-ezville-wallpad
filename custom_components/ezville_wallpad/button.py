@@ -106,7 +106,7 @@ class EzvilleElevatorCallButton(CoordinatorEntity, ButtonEntity):
             "call",
             True
         )
-        _LOGGER.info("Elevator call button pressed")
+        log_info(_LOGGER, "elevator", "Elevator call button pressed")
 
 
 class EzvilleDoorbellButtonBase(CoordinatorEntity, ButtonEntity):
@@ -162,7 +162,7 @@ class EzvilleDoorbellButtonBase(CoordinatorEntity, ButtonEntity):
                     
                     # Only update if within 1 second
                     if time_diff > timedelta(seconds=1):
-                        _LOGGER.debug("Doorbell %s button skipped old update (%.1f seconds old)", 
+                        log_debug(_LOGGER, "doorbell", "Doorbell %s button skipped old update (%.1f seconds old)", 
                                     self._button_type, time_diff.total_seconds())
                         return
                 except Exception as e:
@@ -178,7 +178,7 @@ class EzvilleDoorbellButtonBase(CoordinatorEntity, ButtonEntity):
             }
             # Force update state to reflect the button press time
             self.async_write_ha_state()
-            _LOGGER.info("Doorbell %s button event detected from command 0x%02X", self._button_type, command)
+            log_info(_LOGGER, "doorbell", "Doorbell %s button event detected from command 0x%02X", self._button_type, command)
 
     def _handle_coordinator_update(self) -> None:
         """Handle updated data from the coordinator."""
@@ -237,7 +237,7 @@ class EzvilleDoorbellCallButton(EzvilleDoorbellButtonBase):
         # Update button press time
         self._last_pressed = datetime.now().isoformat()
         self.async_write_ha_state()
-        _LOGGER.info("Doorbell call button pressed")
+        log_info(_LOGGER, "doorbell", "Doorbell call button pressed")
 
 
 class EzvilleDoorbellTalkButton(EzvilleDoorbellButtonBase):
@@ -265,7 +265,7 @@ class EzvilleDoorbellTalkButton(EzvilleDoorbellButtonBase):
         # Update button press time
         self._last_pressed = datetime.now().isoformat()
         self.async_write_ha_state()
-        _LOGGER.info("Doorbell talk button pressed")
+        log_info(_LOGGER, "doorbell", "Doorbell talk button pressed")
 
 
 class EzvilleDoorbellOpenButton(EzvilleDoorbellButtonBase):
@@ -293,7 +293,7 @@ class EzvilleDoorbellOpenButton(EzvilleDoorbellButtonBase):
         # Update button press time
         self._last_pressed = datetime.now().isoformat()
         self.async_write_ha_state()
-        _LOGGER.info("Doorbell open button pressed")
+        log_info(_LOGGER, "doorbell", "Doorbell open button pressed")
 
 
 class EzvilleDoorbellCancelButton(EzvilleDoorbellButtonBase):
@@ -321,4 +321,4 @@ class EzvilleDoorbellCancelButton(EzvilleDoorbellButtonBase):
         # Update button press time
         self._last_pressed = datetime.now().isoformat()
         self.async_write_ha_state()
-        _LOGGER.info("Doorbell cancel button pressed")
+        log_info(_LOGGER, "doorbell", "Doorbell cancel button pressed")

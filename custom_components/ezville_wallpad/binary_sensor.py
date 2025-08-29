@@ -106,7 +106,7 @@ class EzvilleDoorbellSensor(CoordinatorEntity, BinarySensorEntity):
                 
                 # Only update if within 1 second
                 if time_diff > timedelta(seconds=1):
-                    _LOGGER.debug("Doorbell ringing sensor skipped old update (%.1f seconds old)", 
+                    log_debug(_LOGGER, "doorbell", "Doorbell ringing sensor skipped old update (%.1f seconds old)", 
                                 time_diff.total_seconds())
                     return
             except Exception as e:
@@ -125,7 +125,7 @@ class EzvilleDoorbellSensor(CoordinatorEntity, BinarySensorEntity):
                 "raw_data": packet_data.get("data", "")
             }
             self.async_write_ha_state()
-            _LOGGER.info("Doorbell ringing turned ON by command 0x%02X", command)
+            log_info(_LOGGER, "doorbell", "Doorbell ringing turned ON by command 0x%02X", command)
         
         # Check if this is a ringing off command
         elif command in self._ringing_off_commands:
@@ -139,7 +139,7 @@ class EzvilleDoorbellSensor(CoordinatorEntity, BinarySensorEntity):
                 "raw_data": packet_data.get("data", "")
             })
             self.async_write_ha_state()
-            _LOGGER.info("Doorbell ringing turned OFF by command 0x%02X", command)
+            log_info(_LOGGER, "doorbell", "Doorbell ringing turned OFF by command 0x%02X", command)
 
     def _handle_coordinator_update(self) -> None:
         """Handle updated data from the coordinator."""
@@ -227,7 +227,7 @@ class EzvilleDoorbellRingSensor(CoordinatorEntity, BinarySensorEntity):
                 
                 # Only update if within 1 second
                 if time_diff > timedelta(seconds=1):
-                    _LOGGER.debug("Doorbell ring sensor skipped old update (%.1f seconds old)", 
+                    log_debug(_LOGGER, "doorbell", "Doorbell ring sensor skipped old update (%.1f seconds old)", 
                                 time_diff.total_seconds())
                     return
             except Exception as e:
@@ -246,7 +246,7 @@ class EzvilleDoorbellRingSensor(CoordinatorEntity, BinarySensorEntity):
                 "raw_data": packet_data.get("data", "")
             }
             self.async_write_ha_state()
-            _LOGGER.info("Doorbell ring turned ON by command 0x%02X", command)
+            log_info(_LOGGER, "doorbell", "Doorbell ring turned ON by command 0x%02X", command)
         
         # Check if this is a ring off (cancel) command
         elif command in self._ring_off_commands:
@@ -260,7 +260,7 @@ class EzvilleDoorbellRingSensor(CoordinatorEntity, BinarySensorEntity):
                 "raw_data": packet_data.get("data", "")
             })
             self.async_write_ha_state()
-            _LOGGER.info("Doorbell ring turned OFF by cancel command 0x%02X", command)
+            log_info(_LOGGER, "doorbell", "Doorbell ring turned OFF by cancel command 0x%02X", command)
 
     def _handle_coordinator_update(self) -> None:
         """Handle updated data from the coordinator."""
