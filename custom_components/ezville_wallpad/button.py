@@ -9,7 +9,7 @@ from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import DOMAIN, MANUFACTURER, MODEL
+from .const import DOMAIN, MANUFACTURER, MODEL, log_debug, log_info, log_error
 from .coordinator import EzvilleWallpadCoordinator
 
 _LOGGER = logging.getLogger("custom_components.ezville_wallpad.button")
@@ -166,7 +166,7 @@ class EzvilleDoorbellButtonBase(CoordinatorEntity, ButtonEntity):
                                     self._button_type, time_diff.total_seconds())
                         return
                 except Exception as e:
-                    _LOGGER.error("Error processing last_seen time for doorbell button: %s", e)
+                    log_error(_LOGGER, "doorbell", "Error processing last_seen time for doorbell button: %s", e)
                     return
             
             self._last_pressed = datetime.now().isoformat()
@@ -201,15 +201,20 @@ class EzvilleDoorbellButtonBase(CoordinatorEntity, ButtonEntity):
         """When entity is added to hass."""
         await super().async_added_to_hass()
         
-        # No need to register individual callbacks - coordinator update will catch CMD events
+        # Register callback for coordinator updates
+        self.coordinator.register_entity_callback(
+            self._device_key,
+            self._handle_coordinator_update
+        )
 
     async def async_will_remove_from_hass(self) -> None:
         """When entity will be removed from hass."""
         await super().async_will_remove_from_hass()
-        # Unregister callbacks
-        for cmd in self._listen_commands:
-            temp_key = f"doorbell_cmd_{cmd:02X}_temp"
-            # Note: We can't easily unregister specific callbacks, but they'll be cleaned up when coordinator is destroyed
+        # Unregister callback
+        self.coordinator.unregister_entity_callback(
+            self._device_key,
+            self._handle_coordinator_update
+        )
 
 
 class EzvilleDoorbellCallButton(EzvilleDoorbellButtonBase):

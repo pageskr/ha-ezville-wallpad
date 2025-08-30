@@ -11,7 +11,7 @@ from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import DOMAIN, MANUFACTURER, MODEL
+from .const import DOMAIN, MANUFACTURER, MODEL, log_debug, log_info, log_error
 from .coordinator import EzvilleWallpadCoordinator
 
 _LOGGER = logging.getLogger("custom_components.ezville_wallpad.binary_sensor")
@@ -35,9 +35,9 @@ async def async_setup_entry(
         if device_info.get("is_cmd_sensor", False):
             continue
         if device_info["device_type"] == "doorbell":
-            # Add ringing sensor (existing)
+            # Add busy sensor (existing)
             entities.append(
-                EzvilleDoorbellSensor(
+                EzvilleDoorbellBusySensor(
                     coordinator,
                     device_key,
                     device_info
@@ -57,8 +57,8 @@ async def async_setup_entry(
         _LOGGER.info("Added %d binary sensor entities", len(entities))
 
 
-class EzvilleDoorbellSensor(CoordinatorEntity, BinarySensorEntity):
-    """Ezville Wallpad doorbell sensor."""
+class EzvilleDoorbellBusySensor(CoordinatorEntity, BinarySensorEntity):
+    """Ezville Wallpad doorbell busy sensor."""
 
     def __init__(
         self,
@@ -70,9 +70,10 @@ class EzvilleDoorbellSensor(CoordinatorEntity, BinarySensorEntity):
         super().__init__(coordinator)
         self._device_key = device_key
         self._device_info = device_info
-        self._attr_unique_id = f"{DOMAIN}_{device_key}_ringing"
-        self._attr_name = f"{device_info.get('name', 'Doorbell')} Ringing"
+        self._attr_unique_id = f"{DOMAIN}_{device_key}_busy"
+        self._attr_name = f"{device_info.get('name', 'Doorbell')} Busy"
         self._attr_device_class = BinarySensorDeviceClass.OCCUPANCY
+        self._attr_icon = "mdi:phone-in-talk"
         self._is_on = False
         self._last_packet_info = None
         self._attr_extra_state_attributes = {}
@@ -86,12 +87,12 @@ class EzvilleDoorbellSensor(CoordinatorEntity, BinarySensorEntity):
         }
         
         # Commands to listen for
-        self._ringing_on_commands = [0x12, 0x92]  # Talk commands indicate ringing
-        self._ringing_off_commands = [0x11, 0x91, 0x22, 0xA2]  # Cancel/Open commands end ringing
+        self._busy_on_commands = [0x12, 0x92]  # Talk commands indicate busy
+        self._busy_off_commands = [0x11, 0x91, 0x22, 0xA2]  # Cancel/Open commands end busy
 
     @property
     def is_on(self) -> bool:
-        """Return true if doorbell is ringing."""
+        """Return true if doorbell is busy (in call)."""
         return self._is_on
 
     def _handle_packet_received(self, command: int, packet_data: dict) -> None:
@@ -106,40 +107,40 @@ class EzvilleDoorbellSensor(CoordinatorEntity, BinarySensorEntity):
                 
                 # Only update if within 1 second
                 if time_diff > timedelta(seconds=1):
-                    log_debug(_LOGGER, "doorbell", "Doorbell ringing sensor skipped old update (%.1f seconds old)", 
+                    log_debug(_LOGGER, "doorbell", "Doorbell busy sensor skipped old update (%.1f seconds old)", 
                                 time_diff.total_seconds())
                     return
             except Exception as e:
-                _LOGGER.error("Error processing last_seen time for doorbell ringing sensor: %s", e)
+                log_error(_LOGGER, "doorbell", "Error processing last_seen time for doorbell busy sensor: %s", e)
                 return
         
-        # Check if this is a ringing on command
-        if command in self._ringing_on_commands:
+        # Check if this is a busy on command
+        if command in self._busy_on_commands:
             self._is_on = True
             self._last_packet_info = packet_data
             self._attr_extra_state_attributes = {
-                "last_ringing": datetime.now().isoformat(),
+                "last_busy": datetime.now().isoformat(),
                 "device_id": packet_data.get("device_id", ""),
                 "device_num": packet_data.get("device_num", ""),
                 "command": packet_data.get("command", ""),
                 "raw_data": packet_data.get("data", "")
             }
             self.async_write_ha_state()
-            log_info(_LOGGER, "doorbell", "Doorbell ringing turned ON by command 0x%02X", command)
+            log_info(_LOGGER, "doorbell", "Doorbell busy turned ON by command 0x%02X", command)
         
-        # Check if this is a ringing off command
-        elif command in self._ringing_off_commands:
+        # Check if this is a busy off command
+        elif command in self._busy_off_commands:
             self._is_on = False
             self._last_packet_info = packet_data
             self._attr_extra_state_attributes.update({
-                "last_stop_ringing": datetime.now().isoformat(),
+                "last_stop_busy": datetime.now().isoformat(),
                 "device_id": packet_data.get("device_id", ""),
                 "device_num": packet_data.get("device_num", ""),
                 "command": packet_data.get("command", ""),
                 "raw_data": packet_data.get("data", "")
             })
             self.async_write_ha_state()
-            log_info(_LOGGER, "doorbell", "Doorbell ringing turned OFF by command 0x%02X", command)
+            log_info(_LOGGER, "doorbell", "Doorbell busy turned OFF by command 0x%02X", command)
 
     def _handle_coordinator_update(self) -> None:
         """Handle updated data from the coordinator."""
@@ -151,7 +152,7 @@ class EzvilleDoorbellSensor(CoordinatorEntity, BinarySensorEntity):
                 command_str = state.get("command", "").lower().replace("0x", "")
                 try:
                     command = int(command_str, 16)
-                    if command in self._ringing_on_commands or command in self._ringing_off_commands:
+                    if command in self._busy_on_commands or command in self._busy_off_commands:
                         self._handle_packet_received(command, state)
                 except ValueError:
                     pass
@@ -231,7 +232,7 @@ class EzvilleDoorbellRingSensor(CoordinatorEntity, BinarySensorEntity):
                                 time_diff.total_seconds())
                     return
             except Exception as e:
-                _LOGGER.error("Error processing last_seen time for doorbell ring sensor: %s", e)
+                log_error(_LOGGER, "doorbell", "Error processing last_seen time for doorbell ring sensor: %s", e)
                 return
         
         # Check if this is a ring on command
@@ -290,10 +291,7 @@ class EzvilleDoorbellRingSensor(CoordinatorEntity, BinarySensorEntity):
             self._handle_coordinator_update
         )
 
-    def _handle_coordinator_update(self) -> None:
-        """Handle updated data from the coordinator."""
-        # This is for normal state updates from the device
-        super()._handle_coordinator_update()
+
 
     async def async_will_remove_from_hass(self) -> None:
         """When entity will be removed from hass."""
